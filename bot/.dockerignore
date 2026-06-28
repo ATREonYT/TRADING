@@ -1,0 +1,6 @@
+node_modules
+.env
+*.log
+test
+README.md
+DEPLOY.md

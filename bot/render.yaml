@@ -1,0 +1,21 @@
+# One-click deploy on Render (https://render.com) as an always-on background worker.
+# After connecting your repo: Render reads this file; set the two secrets in the dashboard.
+services:
+  - type: worker
+    name: pump-scanner
+    runtime: node
+    branch: claude/lucid-cori-548hkv
+    rootDir: bot
+    buildCommand: npm ci
+    startCommand: npm start
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false   # set in dashboard — never committed
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: EXCHANGE
+        value: binance
+      - key: MIN_WINDOW_CHANGE_PCT
+        value: "4"
+      - key: MIN_VOLUME_SURGE
+        value: "3"
