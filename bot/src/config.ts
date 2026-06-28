@@ -46,6 +46,8 @@ export interface Config {
   maxDeepScan: number;
   /** Confirm buy-side pressure in the live order book before alerting. */
   checkOrderBook: boolean;
+  /** Minutes between "still alive" heartbeat messages. 0 = off. */
+  heartbeatMinutes: number;
   dryRun: boolean;
   thresholds: Thresholds;
 }
@@ -59,6 +61,7 @@ export function loadConfig(): Config {
     scanIntervalSec: envNum("SCAN_INTERVAL_SEC", 20),
     maxDeepScan: envNum("MAX_DEEP_SCAN", 40),
     checkOrderBook: envBool("CHECK_ORDER_BOOK", true),
+    heartbeatMinutes: envNum("HEARTBEAT_MINUTES", 60),
     dryRun: envBool("DRY_RUN", false),
     thresholds: {
       windowMinutes: envNum("WINDOW_MINUTES", 5),

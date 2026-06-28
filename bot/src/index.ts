@@ -153,6 +153,7 @@ async function main() {
   }
 
   // scan loop — keeps running; re-attempts init if the exchange wasn't reachable yet.
+  let lastHeartbeat = Date.now();
   for (;;) {
     if (!paused) {
       if (!ready) {
@@ -164,6 +165,19 @@ async function main() {
           await scanner.scanOnce();
         } catch (err) {
           log.error("loop error:", (err as Error).message);
+        }
+
+        // Periodic proof-of-life so quiet stretches don't look like a crash.
+        if (cfg.heartbeatMinutes > 0 && Date.now() - lastHeartbeat >= cfg.heartbeatMinutes * 60_000) {
+          lastHeartbeat = Date.now();
+          const top = scanner.topMovers(1)[0];
+          const topStr = top ? `Top: ${top.symbol} ${top.percentage >= 0 ? "+" : ""}${top.percentage.toFixed(1)}%` : "";
+          if (username && cfg.chatId) {
+            await bot.send(
+              `💓 <b>Still scanning</b> ${scanner.stats.symbolsTracked} markets on ${cfg.exchange}.\n` +
+                `${scanner.stats.scans} scans · ${scanner.stats.signalsTotal} signals so far. ${topStr}`,
+            );
+          }
         }
       }
     }
