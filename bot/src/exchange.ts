@@ -22,10 +22,25 @@ export class Market {
   /** Load spot markets quoted in the configured currency, active only. */
   async loadSymbols(): Promise<string[]> {
     const markets = await this.ex.loadMarkets();
-    this.symbols = Object.values(markets)
-      .filter((m: any) => m && m.active !== false && m.spot && m.quote === this.quote)
-      .map((m: any) => m.symbol as string);
-    log.info(`Loaded ${this.symbols.length} ${this.quote} spot markets on ${this.ex.id}`);
+    const all = Object.values(markets) as any[];
+    const isSpot = (m: any) => m.spot === true || m.type === "spot";
+    this.symbols = all
+      .filter((m) => m && m.active !== false && isSpot(m) && m.quote === this.quote)
+      .map((m) => m.symbol as string);
+
+    // Fallback: some exchanges don't flag spot consistently — match by symbol suffix.
+    if (this.symbols.length === 0) {
+      this.symbols = all
+        .filter((m) => m && m.active !== false && !m.contract && typeof m.symbol === "string" && m.symbol.endsWith(`/${this.quote}`))
+        .map((m) => m.symbol as string);
+    }
+
+    log.info(`Loaded ${this.symbols.length} ${this.quote} spot markets on ${this.ex.id} (of ${all.length} total)`);
+    if (this.symbols.length === 0) {
+      throw new Error(
+        `0 ${this.quote} spot markets matched on ${this.ex.id} (loaded ${all.length} markets). Check QUOTE_CURRENCY or try EXCHANGE=kucoin.`,
+      );
+    }
     return this.symbols;
   }
 

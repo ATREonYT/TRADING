@@ -112,7 +112,9 @@ async function tryInit(): Promise<boolean> {
   } catch (err) {
     const msg = (err as Error).message;
     log.error("exchange init failed:", msg);
-    const geoBlocked = /\b(451|403)\b/.test(msg) || /restricted|not in allowlist|legal reasons/i.test(msg);
+    scanner.stats.lastError = `init: ${msg.slice(0, 160)}`;
+    scanner.stats.errors++;
+    const geoBlocked = /\b(451|403|418)\b/.test(msg) || /restricted|not in allowlist|legal reasons|eligibility/i.test(msg);
     await bot.send(
       `⚠️ <b>Can't reach ${cfg.exchange}.</b>\n<code>${msg.slice(0, 200)}</code>\n\n` +
         (geoBlocked
