@@ -102,39 +102,70 @@ bot.on("scan", async () => {
     : "Scan complete — no signals right now.";
 });
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Try to load markets; report a clear, actionable error to Telegram on failure. */
+async function tryInit(): Promise<boolean> {
+  try {
+    await scanner.init();
+    return true;
+  } catch (err) {
+    const msg = (err as Error).message;
+    log.error("exchange init failed:", msg);
+    const geoBlocked = /\b(451|403)\b/.test(msg) || /restricted|not in allowlist|legal reasons/i.test(msg);
+    await bot.send(
+      `⚠️ <b>Can't reach ${cfg.exchange}.</b>\n<code>${msg.slice(0, 200)}</code>\n\n` +
+        (geoBlocked
+          ? `This server's region is likely <b>geo-blocked</b> by ${cfg.exchange}. Fix: set Railway variable <code>EXCHANGE</code> to <code>bybit</code>, <code>kucoin</code>, <code>okx</code>, or <code>mexc</code> and redeploy.`
+          : `I'll keep retrying.`),
+    );
+    return false;
+  }
+}
+
 async function main() {
   log.info(`Starting pump scanner · exchange=${cfg.exchange} quote=${cfg.quote} dryRun=${cfg.dryRun}`);
-  const username = await bot.getMe();
-  if (username) log.ok(`Connected to Telegram as @${username}`);
-  else log.warn("Telegram token missing/invalid — running without messaging.");
 
-  await scanner.init();
+  const username = await bot.getMe();
+  if (username) {
+    log.ok(`Connected to Telegram as @${username}`);
+    // Start the command listener FIRST so /status etc. work even if the exchange is down.
+    if (!runOnce) void bot.startPolling();
+  } else {
+    log.warn("Telegram token missing/invalid — set TELEGRAM_BOT_TOKEN. Running without messaging.");
+  }
 
   if (runOnce) {
-    const found = await scanner.scanOnce();
-    log.ok(`One-shot scan done. ${found.length} signal(s). Markets: ${scanner.stats.symbolsTracked}`);
+    if (await tryInit()) {
+      const found = await scanner.scanOnce();
+      log.ok(`One-shot scan done. ${found.length} signal(s). Markets: ${scanner.stats.symbolsTracked}`);
+    }
     return;
   }
 
-  if (username && cfg.chatId) {
+  let ready = await tryInit();
+  if (ready && username && cfg.chatId) {
     await bot.send(
       `🚀 <b>Pump Scanner started</b>\nWatching ${scanner.stats.symbolsTracked} ${cfg.quote} markets on ${cfg.exchange}.\nMin move +${cfg.thresholds.minWindowChangePct}% / ${cfg.thresholds.windowMinutes}m · ${cfg.thresholds.minVolumeSurge}× volume.`,
     );
   }
 
-  // command polling runs concurrently with the scan loop
-  void bot.startPolling();
-
-  // scan loop
+  // scan loop — keeps running; re-attempts init if the exchange wasn't reachable yet.
   for (;;) {
     if (!paused) {
-      try {
-        await scanner.scanOnce();
-      } catch (err) {
-        log.error("loop error:", (err as Error).message);
+      if (!ready) {
+        ready = await tryInit();
+        if (ready) await bot.send("✅ Connected to the exchange — scanning now.");
+      }
+      if (ready) {
+        try {
+          await scanner.scanOnce();
+        } catch (err) {
+          log.error("loop error:", (err as Error).message);
+        }
       }
     }
-    await new Promise((r) => setTimeout(r, cfg.scanIntervalSec * 1000));
+    await sleep(cfg.scanIntervalSec * 1000);
   }
 }
 
