@@ -108,6 +108,9 @@ export function evaluate(
     consecutiveUp: conUp,
     brokeOut,
     volAccel: round(volAccel),
+    riskScore: 0,
+    riskLevel: "low",
+    riskFlags: [],
     reasons,
     at: Date.now(),
   };

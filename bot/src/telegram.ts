@@ -15,6 +15,8 @@ interface TgUpdate {
 
 export type CommandHandler = (args: string[], chatId: number) => Promise<string | void> | string | void;
 
+export type InlineButton = { text: string; url: string };
+
 /** Thin Telegram Bot API client: send messages + long-poll for commands. */
 export class TelegramBot {
   private offset = 0;
@@ -27,21 +29,29 @@ export class TelegramBot {
     return `${API}/bot${this.token}/${method}`;
   }
 
-  async send(text: string, chatId: string | number = this.defaultChatId): Promise<void> {
+  async send(
+    text: string,
+    chatId: string | number = this.defaultChatId,
+    buttons?: InlineButton[][],
+  ): Promise<void> {
     if (!this.token || !chatId) {
       log.warn("Telegram not configured — message suppressed:\n" + text);
       return;
     }
     try {
+      const body: Record<string, unknown> = {
+        chat_id: chatId,
+        text,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      };
+      if (buttons?.length) {
+        body.reply_markup = { inline_keyboard: buttons };
+      }
       const res = await fetch(this.url("sendMessage"), {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text,
-          parse_mode: "HTML",
-          disable_web_page_preview: true,
-        }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const body = await res.text();

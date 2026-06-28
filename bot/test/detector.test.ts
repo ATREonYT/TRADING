@@ -11,6 +11,7 @@ const T: Thresholds = {
   minQuoteVolume: 2_000_000,
   maxRsi: 100, // RSI gate disabled except where a test overrides it
   minScore: 55,
+  maxRiskScore: 65,
   cooldownMinutes: 30,
 };
 

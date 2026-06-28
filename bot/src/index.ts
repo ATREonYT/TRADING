@@ -9,10 +9,19 @@ const runOnce = process.argv.includes("--once");
 
 const bot = new TelegramBot(cfg.telegramToken, cfg.chatId);
 const scanner = new Scanner(cfg, (signal) => {
-  const text = formatSignal(signal, scanner.market.tradeUrl(signal.symbol));
+  const windowSeconds = cfg.thresholds.windowMinutes * 60;
+  const text = formatSignal(signal, cfg.exchange, windowSeconds);
+  const buttons = [
+    [
+      { text: `🟢 Buy on ${cfg.exchange.toUpperCase()}`, url: scanner.market.tradeUrl(signal.symbol) },
+      { text: "📊 Dex Screener", url: scanner.market.dexScreenerUrl(signal.symbol) },
+    ],
+  ];
   if (cfg.dryRun) log.ok("[DRY_RUN] signal:\n" + text);
-  else void bot.send(text);
-  log.ok(`SIGNAL ${signal.symbol} score=${signal.score} +${signal.windowChangePct}% vol=${signal.volumeSurge}x`);
+  else void bot.send(text, cfg.chatId, buttons);
+  log.ok(
+    `SIGNAL ${signal.symbol} score=${signal.score} risk=${signal.riskLevel}(${signal.riskScore}) +${signal.windowChangePct}% vol=${signal.volumeSurge}x`,
+  );
 });
 
 let paused = false;
@@ -34,6 +43,7 @@ function settingsText(t: Thresholds): string {
     `minQuoteVolume: <code>${t.minQuoteVolume}</code>`,
     `maxRsi: <code>${t.maxRsi}</code>`,
     `minScore: <code>${t.minScore}</code>`,
+    `maxRiskScore: <code>${t.maxRiskScore}</code>`,
     `cooldownMinutes: <code>${t.cooldownMinutes}</code>`,
     ``,
     `Adjust with <code>/set &lt;key&gt; &lt;value&gt;</code>`,

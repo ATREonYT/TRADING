@@ -48,6 +48,18 @@ export interface Signal {
   volAccel: number;
   /** Top-of-book bid/ask volume ratio (>1 = more buyers). Undefined if not checked. */
   buyPressure?: number;
+  /** Risk/scam heuristic: 0 (clean) .. 100 (likely trap). */
+  riskScore: number;
+  riskLevel: "low" | "medium" | "high";
+  riskFlags: string[];
   reasons: SignalReason[];
   at: number;
+}
+
+export interface BookSnapshot {
+  bestBid: number;
+  bestAsk: number;
+  bidVol: number;
+  askVol: number;
+  levels: number;
 }

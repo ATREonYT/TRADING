@@ -3,6 +3,7 @@ import type { Signal, TickerLite } from "./types.js";
 import { Market } from "./exchange.js";
 import { evaluate } from "./detector.js";
 import { orderBookImbalance } from "./indicators.js";
+import { assessRisk } from "./risk.js";
 import { log } from "./logger.js";
 
 export interface ScanStats {
@@ -83,26 +84,38 @@ export class Scanner {
           deep++;
           const signal = evaluate(ticker.symbol, candles, ticker, this.cfg.thresholds);
           if (signal) {
-            // Confirm buy-side pressure in the live order book before alerting.
-            if (this.cfg.checkOrderBook) {
-              const book = await this.market.fetchBook(ticker.symbol, 20);
-              if (book) {
-                const imb = orderBookImbalance(book.bidVol, book.askVol);
-                signal.buyPressure = Math.round(imb * 100) / 100;
-                if (imb >= 1.2) {
-                  signal.reasons.push({
-                    code: "buy-pressure",
-                    label: `order book ${imb.toFixed(1)}× buy-heavy`,
-                    value: signal.buyPressure,
-                    threshold: 1.2,
-                  });
-                  signal.score = Math.min(100, signal.score + 6);
-                } else if (imb < 0.6) {
-                  // heavy sell wall — likely fading; skip this one
-                  continue;
-                }
+            // Fetch the live order book once — feeds buy-pressure AND risk check.
+            const book = this.cfg.checkOrderBook
+              ? await this.market.fetchBook(ticker.symbol, 20)
+              : null;
+
+            if (book) {
+              const imb = orderBookImbalance(book.bidVol, book.askVol);
+              signal.buyPressure = Math.round(imb * 100) / 100;
+              if (imb >= 1.2) {
+                signal.reasons.push({
+                  code: "buy-pressure",
+                  label: `order book ${imb.toFixed(1)}× buy-heavy`,
+                  value: signal.buyPressure,
+                  threshold: 1.2,
+                });
+                signal.score = Math.min(100, signal.score + 6);
+              } else if (imb < 0.6) {
+                // heavy sell wall — likely fading; skip this one
+                continue;
               }
             }
+
+            // Thorough scam/trap check before alerting.
+            const risk = assessRisk(candles, ticker, book, signal.windowChangePct);
+            signal.riskScore = risk.score;
+            signal.riskLevel = risk.level;
+            signal.riskFlags = risk.flags;
+            if (risk.score > this.cfg.thresholds.maxRiskScore) {
+              // likely a trap — don't alert
+              continue;
+            }
+
             this.cooldownUntil.set(
               ticker.symbol,
               now + this.cfg.thresholds.cooldownMinutes * 60_000,

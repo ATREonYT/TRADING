@@ -16,26 +16,35 @@ function scoreBar(score: number): string {
   return "█".repeat(filled) + "░".repeat(10 - filled);
 }
 
-/** Format a pump signal as a Telegram HTML alert. */
-export function formatSignal(s: Signal, buyUrl: string): string {
-  const heat = s.score >= 80 ? "🔥🔥🔥" : s.score >= 65 ? "🔥🔥" : "🔥";
+/** Compact price string with enough precision for sub-dollar coins. */
+function fmtPrice(n: number): string {
+  if (n >= 1) return n.toLocaleString("en-US", { maximumFractionDigits: 4 });
+  return n.toPrecision(5).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+const RISK_EMOJI = { low: "🟢", medium: "🟡", high: "🔴" } as const;
+
+/** Format a pump signal in the clean pump-channel style. */
+export function formatSignal(s: Signal, exchangeName: string, windowSeconds: number): string {
+  const base = s.symbol.split("/")[0] ?? s.symbol;
+  const heat = s.score >= 80 ? "🚀🚀🚀" : s.score >= 65 ? "🚀🚀" : "🚀";
+  const priceFrom = s.price / (1 + s.windowChangePct / 100);
   const pressure =
     s.buyPressure !== undefined
-      ? `  ·  book ${s.buyPressure}× ${s.buyPressure >= 1 ? "buy" : "sell"}-heavy`
+      ? ` · book ${s.buyPressure}× ${s.buyPressure >= 1 ? "buy" : "sell"}`
       : "";
+  const riskNote = s.riskFlags.length ? ` <i>(${esc(s.riskFlags.slice(0, 2).join(", "))})</i>` : "";
   const lines = [
-    `${heat} <b>PUMP SIGNAL</b> · <b>${esc(s.symbol)}</b>`,
+    `${heat} <b>${esc(base)}</b>  +${s.windowChangePct}% in ${windowSeconds}s`,
+    `> Exchange: ${esc(exchangeName.toUpperCase())}`,
+    `> ${fmtPrice(priceFrom)} → <b>${fmtPrice(s.price)}</b>`,
+    `> Volume 24h: ${fmtCompact(s.quoteVolume)}`,
+    `> Surge: ${s.volumeSurge}× · accel ${s.volAccel}× · RSI ${s.rsi}`,
+    `> Risk: ${RISK_EMOJI[s.riskLevel]} <b>${s.riskLevel.toUpperCase()}</b>${riskNote}`,
+    `> Score: <b>${s.score}/100</b>${pressure}`,
     ``,
-    `Price: <b>${fmtUsd(s.price)}</b>`,
-    `Move: <b>+${s.windowChangePct}%</b> (window)  ·  24h ${s.change24h >= 0 ? "+" : ""}${s.change24h}%`,
-    `Volume: <b>${s.volumeSurge}×</b> avg, accel ${s.volAccel}×  ·  RSI ${s.rsi}`,
-    `Liquidity: ${fmtCompact(s.quoteVolume)} 24h${pressure}`,
-    ``,
-    `Score: <b>${s.score}/100</b>  <code>${scoreBar(s.score)}</code>`,
-    `Why: ${s.reasons.map((r) => esc(r.label)).join(" · ")}`,
-    ``,
-    `👉 <a href="${buyUrl}"><b>Buy ${esc(s.symbol.split("/")[0] ?? s.symbol)} →</b></a>`,
-    `<i>Not financial advice. This detects a move already starting — it cannot predict the future. Verify and use a stop.</i>`,
+    `#${esc(base)} #${esc(base)}_pump`,
+    `<i>Not financial advice · high-risk · verify &amp; use a stop</i>`,
   ];
   return lines.join("\n");
 }

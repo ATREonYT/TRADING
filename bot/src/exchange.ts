@@ -1,5 +1,5 @@
 import ccxt, { type Exchange } from "ccxt";
-import type { Candle, OHLCV, TickerLite } from "./types.js";
+import type { BookSnapshot, Candle, OHLCV, TickerLite } from "./types.js";
 import { toCandles } from "./indicators.js";
 import { log } from "./logger.js";
 
@@ -69,13 +69,21 @@ export class Market {
     return toCandles(rows);
   }
 
-  /** Top-of-book bid/ask volume for buy-pressure analysis. */
-  async fetchBook(symbol: string, depth = 20): Promise<{ bidVol: number; askVol: number } | null> {
+  /** Order-book snapshot for buy-pressure + risk analysis. */
+  async fetchBook(symbol: string, depth = 20): Promise<BookSnapshot | null> {
     try {
       const ob = await this.ex.fetchOrderBook(symbol, depth);
-      const bidVol = (ob.bids ?? []).reduce((a, b) => a + (Number(b[1]) || 0), 0);
-      const askVol = (ob.asks ?? []).reduce((a, b) => a + (Number(b[1]) || 0), 0);
-      return { bidVol, askVol };
+      const bids = ob.bids ?? [];
+      const asks = ob.asks ?? [];
+      const bidVol = bids.reduce((a, b) => a + (Number(b[1]) || 0), 0);
+      const askVol = asks.reduce((a, b) => a + (Number(b[1]) || 0), 0);
+      return {
+        bestBid: Number(bids[0]?.[0]) || 0,
+        bestAsk: Number(asks[0]?.[0]) || 0,
+        bidVol,
+        askVol,
+        levels: Math.min(bids.length, asks.length),
+      };
     } catch {
       return null;
     }
@@ -101,6 +109,12 @@ export class Market {
       default:
         return `https://www.tradingview.com/chart/?symbol=${this.ex.id.toUpperCase()}:${base}${quote}`;
     }
+  }
+
+  /** Dex Screener search for the base token (works for most listed coins). */
+  dexScreenerUrl(symbol: string): string {
+    const base = symbol.split("/")[0] ?? symbol;
+    return `https://dexscreener.com/search?q=${encodeURIComponent(base)}`;
   }
 
   /** Back-compat alias. */

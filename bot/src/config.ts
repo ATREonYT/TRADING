@@ -32,6 +32,8 @@ export interface Thresholds {
   maxRsi: number;
   /** Minimum composite score (0-100) required to send an alert. */
   minScore: number;
+  /** Skip alerts whose scam/risk score exceeds this (0 clean .. 100 trap). */
+  maxRiskScore: number;
   /** Per-symbol alert cooldown in minutes (anti-spam). */
   cooldownMinutes: number;
 }
@@ -67,9 +69,10 @@ export function loadConfig(): Config {
       windowMinutes: envNum("WINDOW_MINUTES", 5),
       minWindowChangePct: envNum("MIN_WINDOW_CHANGE_PCT", 4),
       minVolumeSurge: envNum("MIN_VOLUME_SURGE", 3),
-      minQuoteVolume: envNum("MIN_QUOTE_VOLUME", 2_000_000),
+      minQuoteVolume: envNum("MIN_QUOTE_VOLUME", 300_000),
       maxRsi: envNum("MAX_RSI", 82),
-      minScore: envNum("MIN_SCORE", 55),
+      minScore: envNum("MIN_SCORE", 50),
+      maxRiskScore: envNum("MAX_RISK_SCORE", 65),
       cooldownMinutes: envNum("COOLDOWN_MINUTES", 30),
     },
   };
@@ -82,5 +85,6 @@ export const THRESHOLD_KEYS: (keyof Thresholds)[] = [
   "minQuoteVolume",
   "maxRsi",
   "minScore",
+  "maxRiskScore",
   "cooldownMinutes",
 ];
