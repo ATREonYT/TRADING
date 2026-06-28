@@ -9,7 +9,7 @@ const runOnce = process.argv.includes("--once");
 
 const bot = new TelegramBot(cfg.telegramToken, cfg.chatId);
 const scanner = new Scanner(cfg, (signal) => {
-  const text = formatSignal(signal, scanner.market.chartUrl(signal.symbol));
+  const text = formatSignal(signal, scanner.market.tradeUrl(signal.symbol));
   if (cfg.dryRun) log.ok("[DRY_RUN] signal:\n" + text);
   else void bot.send(text);
   log.ok(`SIGNAL ${signal.symbol} score=${signal.score} +${signal.windowChangePct}% vol=${signal.volumeSurge}x`);

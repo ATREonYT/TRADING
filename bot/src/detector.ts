@@ -4,6 +4,7 @@ import {
   consecutiveUp,
   isBreakout,
   rsi,
+  volumeAcceleration,
   volumeSurge,
   windowChangePct,
 } from "./indicators.js";
@@ -41,6 +42,7 @@ export function evaluate(
   const r = rsi(candles, 14);
   const conUp = consecutiveUp(candles);
   const brokeOut = isBreakout(candles, 30);
+  const volAccel = volumeAcceleration(candles);
 
   // Hard gates: the two defining traits of a pump.
   if (change < t.minWindowChangePct) return null;
@@ -68,6 +70,9 @@ export function evaluate(
   if (conUp >= 3) {
     reasons.push({ code: "acceleration", label: `${conUp} green candles`, value: conUp, threshold: 3 });
   }
+  if (volAccel >= 1.5) {
+    reasons.push({ code: "vol-accel", label: `volume accelerating ${volAccel.toFixed(1)}×`, value: round(volAccel), threshold: 1.5 });
+  }
 
   // --- composite score (0-100) ---
   // momentum: ramps from threshold up to 3× threshold
@@ -76,14 +81,16 @@ export function evaluate(
   const sVolume = ramp(surge, t.minVolumeSurge, t.minVolumeSurge * 3.3);
   const sBreakout = brokeOut ? 1 : 0;
   const sAccel = ramp(conUp, 2, 6);
+  const sVolAccel = ramp(volAccel, 1.2, 3);
   // overbought penalty: 0 below 60 RSI, up to -1 weight near maxRsi
   const overbought = ramp(r, 60, t.maxRsi);
 
   const raw =
-    0.4 * sMomentum +
-    0.35 * sVolume +
-    0.15 * sBreakout +
-    0.1 * sAccel -
+    0.36 * sMomentum +
+    0.32 * sVolume +
+    0.14 * sBreakout +
+    0.08 * sAccel +
+    0.1 * sVolAccel -
     0.25 * overbought;
 
   const score = Math.round(Math.max(0, Math.min(1, raw)) * 100);
@@ -100,6 +107,7 @@ export function evaluate(
     rsi: round(r),
     consecutiveUp: conUp,
     brokeOut,
+    volAccel: round(volAccel),
     reasons,
     at: Date.now(),
   };

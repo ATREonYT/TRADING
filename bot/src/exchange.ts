@@ -54,9 +54,42 @@ export class Market {
     return toCandles(rows);
   }
 
+  /** Top-of-book bid/ask volume for buy-pressure analysis. */
+  async fetchBook(symbol: string, depth = 20): Promise<{ bidVol: number; askVol: number } | null> {
+    try {
+      const ob = await this.ex.fetchOrderBook(symbol, depth);
+      const bidVol = (ob.bids ?? []).reduce((a, b) => a + (Number(b[1]) || 0), 0);
+      const askVol = (ob.asks ?? []).reduce((a, b) => a + (Number(b[1]) || 0), 0);
+      return { bidVol, askVol };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Direct trade/buy page on the exchange for this symbol. */
+  tradeUrl(symbol: string): string {
+    const base = symbol.split("/")[0] ?? symbol;
+    const quote = symbol.split("/")[1] ?? "USDT";
+    switch (this.ex.id) {
+      case "binance":
+        return `https://www.binance.com/en/trade/${base}_${quote}`;
+      case "bybit":
+        return `https://www.bybit.com/en/trade/spot/${base}/${quote}`;
+      case "kucoin":
+        return `https://www.kucoin.com/trade/${base}-${quote}`;
+      case "okx":
+        return `https://www.okx.com/trade-spot/${base.toLowerCase()}-${quote.toLowerCase()}`;
+      case "mexc":
+        return `https://www.mexc.com/exchange/${base}_${quote}`;
+      case "gateio":
+        return `https://www.gate.io/trade/${base}_${quote}`;
+      default:
+        return `https://www.tradingview.com/chart/?symbol=${this.ex.id.toUpperCase()}:${base}${quote}`;
+    }
+  }
+
+  /** Back-compat alias. */
   chartUrl(symbol: string): string {
-    const pair = symbol.replace("/", "");
-    if (this.ex.id === "binance") return `https://www.binance.com/en/trade/${symbol.replace("/", "_")}`;
-    return `https://www.tradingview.com/chart/?symbol=${this.ex.id.toUpperCase()}:${pair}`;
+    return this.tradeUrl(symbol);
   }
 }

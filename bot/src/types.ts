@@ -44,6 +44,10 @@ export interface Signal {
   rsi: number;
   consecutiveUp: number;
   brokeOut: boolean;
+  /** Volume of the latest candle vs the one before it (acceleration). */
+  volAccel: number;
+  /** Top-of-book bid/ask volume ratio (>1 = more buyers). Undefined if not checked. */
+  buyPressure?: number;
   reasons: SignalReason[];
   at: number;
 }

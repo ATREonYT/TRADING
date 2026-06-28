@@ -2,6 +2,7 @@ import type { Config } from "./config.js";
 import type { Signal, TickerLite } from "./types.js";
 import { Market } from "./exchange.js";
 import { evaluate } from "./detector.js";
+import { orderBookImbalance } from "./indicators.js";
 import { log } from "./logger.js";
 
 export interface ScanStats {
@@ -82,6 +83,26 @@ export class Scanner {
           deep++;
           const signal = evaluate(ticker.symbol, candles, ticker, this.cfg.thresholds);
           if (signal) {
+            // Confirm buy-side pressure in the live order book before alerting.
+            if (this.cfg.checkOrderBook) {
+              const book = await this.market.fetchBook(ticker.symbol, 20);
+              if (book) {
+                const imb = orderBookImbalance(book.bidVol, book.askVol);
+                signal.buyPressure = Math.round(imb * 100) / 100;
+                if (imb >= 1.2) {
+                  signal.reasons.push({
+                    code: "buy-pressure",
+                    label: `order book ${imb.toFixed(1)}× buy-heavy`,
+                    value: signal.buyPressure,
+                    threshold: 1.2,
+                  });
+                  signal.score = Math.min(100, signal.score + 6);
+                } else if (imb < 0.6) {
+                  // heavy sell wall — likely fading; skip this one
+                  continue;
+                }
+              }
+            }
             this.cooldownUntil.set(
               ticker.symbol,
               now + this.cfg.thresholds.cooldownMinutes * 60_000,

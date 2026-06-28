@@ -44,6 +44,8 @@ export interface Config {
   scanIntervalSec: number;
   /** Max symbols to deep-scan (fetch klines) per cycle after prefilter. */
   maxDeepScan: number;
+  /** Confirm buy-side pressure in the live order book before alerting. */
+  checkOrderBook: boolean;
   dryRun: boolean;
   thresholds: Thresholds;
 }
@@ -54,8 +56,9 @@ export function loadConfig(): Config {
     chatId: envStr("TELEGRAM_CHAT_ID", ""),
     exchange: envStr("EXCHANGE", "binance"),
     quote: envStr("QUOTE_CURRENCY", "USDT"),
-    scanIntervalSec: envNum("SCAN_INTERVAL_SEC", 60),
+    scanIntervalSec: envNum("SCAN_INTERVAL_SEC", 20),
     maxDeepScan: envNum("MAX_DEEP_SCAN", 40),
+    checkOrderBook: envBool("CHECK_ORDER_BOOK", true),
     dryRun: envBool("DRY_RUN", false),
     thresholds: {
       windowMinutes: envNum("WINDOW_MINUTES", 5),

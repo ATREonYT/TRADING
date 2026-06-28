@@ -17,21 +17,25 @@ function scoreBar(score: number): string {
 }
 
 /** Format a pump signal as a Telegram HTML alert. */
-export function formatSignal(s: Signal, chartUrl: string): string {
+export function formatSignal(s: Signal, buyUrl: string): string {
   const heat = s.score >= 80 ? "🔥🔥🔥" : s.score >= 65 ? "🔥🔥" : "🔥";
+  const pressure =
+    s.buyPressure !== undefined
+      ? `  ·  book ${s.buyPressure}× ${s.buyPressure >= 1 ? "buy" : "sell"}-heavy`
+      : "";
   const lines = [
     `${heat} <b>PUMP SIGNAL</b> · <b>${esc(s.symbol)}</b>`,
     ``,
     `Price: <b>${fmtUsd(s.price)}</b>`,
     `Move: <b>+${s.windowChangePct}%</b> (window)  ·  24h ${s.change24h >= 0 ? "+" : ""}${s.change24h}%`,
-    `Volume: <b>${s.volumeSurge}×</b> avg  ·  RSI ${s.rsi}`,
-    `Liquidity: ${fmtCompact(s.quoteVolume)} 24h`,
+    `Volume: <b>${s.volumeSurge}×</b> avg, accel ${s.volAccel}×  ·  RSI ${s.rsi}`,
+    `Liquidity: ${fmtCompact(s.quoteVolume)} 24h${pressure}`,
     ``,
     `Score: <b>${s.score}/100</b>  <code>${scoreBar(s.score)}</code>`,
     `Why: ${s.reasons.map((r) => esc(r.label)).join(" · ")}`,
     ``,
-    `<a href="${chartUrl}">Open chart →</a>`,
-    `<i>Not financial advice. Momentum signal only — verify before trading.</i>`,
+    `👉 <a href="${buyUrl}"><b>Buy ${esc(s.symbol.split("/")[0] ?? s.symbol)} →</b></a>`,
+    `<i>Not financial advice. This detects a move already starting — it cannot predict the future. Verify and use a stop.</i>`,
   ];
   return lines.join("\n");
 }

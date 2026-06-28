@@ -41,6 +41,27 @@ export function volumeSurge(candles: Candle[], lookback = 20): number {
   return latest / avg;
 }
 
+/**
+ * Volume acceleration: latest candle volume vs the previous candle's volume.
+ * >1 means trading is speeding up right now (early pump tell). Returns 1 if flat.
+ */
+export function volumeAcceleration(candles: Candle[]): number {
+  if (candles.length < 2) return 1;
+  const last = candles[candles.length - 1]!.volume;
+  const prev = candles[candles.length - 2]!.volume;
+  if (prev <= 0) return last > 0 ? Infinity : 1;
+  return last / prev;
+}
+
+/**
+ * Order-book imbalance: bid volume / ask volume near top of book.
+ * >1 means more resting buy interest than sell — buy-side pressure.
+ */
+export function orderBookImbalance(bidVol: number, askVol: number): number {
+  if (askVol <= 0) return bidVol > 0 ? Infinity : 1;
+  return bidVol / askVol;
+}
+
 /** Count of consecutive bullish (close >= open) candles ending at the latest. */
 export function consecutiveUp(candles: Candle[]): number {
   let n = 0;
