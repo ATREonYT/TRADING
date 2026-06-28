@@ -49,6 +49,39 @@ export function formatSignal(s: Signal, exchangeName: string, windowSeconds: num
   return lines.join("\n");
 }
 
+/** Format an on-demand /risk lookup result. */
+export function formatRiskReport(r: {
+  symbol: string;
+  ticker: TickerLite;
+  risk: { score: number; level: "low" | "medium" | "high"; flags: string[] };
+  windowChangePct: number;
+  volumeSurge: number;
+  rsi: number;
+  buyPressure?: number;
+}): string {
+  const base = r.symbol.split("/")[0] ?? r.symbol;
+  const verdict =
+    r.risk.level === "low"
+      ? "looks relatively clean"
+      : r.risk.level === "medium"
+        ? "trade with caution"
+        : "high trap risk — avoid or tiny size";
+  const flags = r.risk.flags.length ? r.risk.flags.map((f) => `• ${esc(f)}`).join("\n") : "• none flagged";
+  const pressure = r.buyPressure !== undefined ? ` · book ${r.buyPressure}× ${r.buyPressure >= 1 ? "buy" : "sell"}` : "";
+  return [
+    `${RISK_EMOJI[r.risk.level]} <b>${esc(base)}</b> risk check`,
+    ``,
+    `Price: <b>${fmtPrice(r.ticker.last)}</b> · 24h ${r.ticker.percentage >= 0 ? "+" : ""}${r.ticker.percentage.toFixed(2)}%`,
+    `Volume 24h: ${fmtCompact(r.ticker.quoteVolume)}`,
+    `Move ${r.windowChangePct >= 0 ? "+" : ""}${r.windowChangePct}% · surge ${r.volumeSurge}× · RSI ${r.rsi}${pressure}`,
+    ``,
+    `Risk: ${RISK_EMOJI[r.risk.level]} <b>${r.risk.level.toUpperCase()}</b> (${r.risk.score}/100) — ${verdict}`,
+    flags,
+    ``,
+    `<i>Heuristic on market data, not a contract audit — it can't catch every scam.</i>`,
+  ].join("\n");
+}
+
 export function formatTopMovers(movers: TickerLite[]): string {
   if (!movers.length) return "No liquid movers right now.";
   const rows = movers.map((m, i) => {

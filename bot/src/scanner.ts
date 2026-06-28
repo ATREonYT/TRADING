@@ -2,8 +2,8 @@ import type { Config } from "./config.js";
 import type { Signal, TickerLite } from "./types.js";
 import { Market } from "./exchange.js";
 import { evaluate } from "./detector.js";
-import { orderBookImbalance } from "./indicators.js";
-import { assessRisk } from "./risk.js";
+import { orderBookImbalance, rsi, volumeSurge, windowChangePct } from "./indicators.js";
+import { assessRisk, type RiskResult } from "./risk.js";
 import { log } from "./logger.js";
 
 export interface ScanStats {
@@ -53,6 +53,46 @@ export class Scanner {
       .filter((t) => t.quoteVolume >= this.cfg.thresholds.minQuoteVolume)
       .sort((a, b) => b.percentage - a.percentage)
       .slice(0, n);
+  }
+
+  /** Normalise user input ("pepe", "PEPE/USDT") to a full symbol on this exchange. */
+  resolveSymbol(input: string): string {
+    let s = input.trim().toUpperCase();
+    if (!s.includes("/")) s = `${s}/${this.cfg.quote}`;
+    return s;
+  }
+
+  /** On-demand analysis of one symbol for the /risk command. */
+  async analyze(input: string): Promise<{
+    symbol: string;
+    ticker: TickerLite;
+    risk: RiskResult;
+    windowChangePct: number;
+    volumeSurge: number;
+    rsi: number;
+    buyPressure?: number;
+  } | { error: string }> {
+    const symbol = this.resolveSymbol(input);
+    if (this.market.loaded && !this.market.hasSymbol(symbol)) {
+      return { error: `${symbol} isn't a ${this.cfg.quote} spot market on ${this.market.id}.` };
+    }
+    const ticker =
+      this.lastTickers.find((t) => t.symbol === symbol) ?? (await this.market.fetchTicker(symbol));
+    if (!ticker) return { error: `Couldn't fetch ${symbol}.` };
+
+    const candles = await this.market.fetchCandles(symbol, 60);
+    const book = await this.market.fetchBook(symbol, 20);
+    const change = windowChangePct(candles, this.cfg.thresholds.windowMinutes);
+    const risk = assessRisk(candles, ticker, book, change);
+    return {
+      symbol,
+      ticker,
+      risk,
+      windowChangePct: Math.round(change * 100) / 100,
+      volumeSurge: Math.round(volumeSurge(candles, 20) * 100) / 100,
+      rsi: Math.round(rsi(candles, 14) * 100) / 100,
+      buyPressure: book ? Math.round(orderBookImbalance(book.bidVol, book.askVol) * 100) / 100 : undefined,
+    };
   }
 
   private inCooldown(symbol: string, now: number): boolean {

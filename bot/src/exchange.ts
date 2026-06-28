@@ -63,6 +63,33 @@ export class Market {
     return out;
   }
 
+  /** Fetch a single ticker on demand (for /risk lookups). */
+  async fetchTicker(symbol: string): Promise<TickerLite | null> {
+    try {
+      const t = (await this.ex.fetchTicker(symbol)) as any;
+      const last = Number(t.last ?? t.close ?? 0);
+      if (!last) return null;
+      return {
+        symbol,
+        last,
+        percentage: Number(t.percentage ?? 0),
+        quoteVolume: Number(t.quoteVolume ?? (t.baseVolume ?? 0) * last),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Does this symbol exist on the exchange? */
+  hasSymbol(symbol: string): boolean {
+    return this.symbols.includes(symbol);
+  }
+
+  /** Whether markets have been loaded yet. */
+  get loaded(): boolean {
+    return this.symbols.length > 0;
+  }
+
   /** Fetch recent 1m candles for one symbol. */
   async fetchCandles(symbol: string, limit = 60): Promise<Candle[]> {
     const rows = (await this.ex.fetchOHLCV(symbol, "1m", undefined, limit)) as OHLCV[];

@@ -1,7 +1,7 @@
 import { loadConfig, THRESHOLD_KEYS, type Thresholds } from "./config.js";
 import { Scanner } from "./scanner.js";
 import { TelegramBot } from "./telegram.js";
-import { formatSignal, formatTopMovers } from "./format.js";
+import { formatSignal, formatTopMovers, formatRiskReport } from "./format.js";
 import { log } from "./logger.js";
 
 const cfg = loadConfig();
@@ -71,6 +71,7 @@ const helpText = [
   "I'll DM you when a coin starts pumping. Commands:",
   "/status – scanner health",
   "/top – current top movers",
+  "/risk &lt;symbol&gt; – scam/risk check a coin (e.g. /risk PEPE)",
   "/settings – view thresholds",
   "/set &lt;key&gt; &lt;value&gt; – tune a threshold",
   "/scan – force a scan now",
@@ -84,6 +85,20 @@ bot.on("help", () => helpText);
 bot.on("status", () => statusText());
 bot.on("settings", () => settingsText(cfg.thresholds));
 bot.on("top", () => formatTopMovers(scanner.topMovers(10)));
+
+bot.on("risk", async (args, chatId) => {
+  const input = args[0];
+  if (!input) return "Usage: /risk <symbol>   e.g. /risk PEPE";
+  const res = await scanner.analyze(input);
+  if ("error" in res) return res.error;
+  const buttons = [
+    [
+      { text: `🟢 Buy on ${cfg.exchange.toUpperCase()}`, url: scanner.market.tradeUrl(res.symbol) },
+      { text: "📊 Dex Screener", url: scanner.market.dexScreenerUrl(res.symbol) },
+    ],
+  ];
+  await bot.send(formatRiskReport(res), chatId, buttons);
+});
 
 bot.on("set", (args) => {
   const [key, valueRaw] = args;
