@@ -24,7 +24,7 @@ const scanner = new Scanner(cfg, (signal) => {
     ],
   ];
   if (cfg.dryRun) log.ok("[DRY_RUN] signal:\n" + text);
-  else void bot.send(text, cfg.chatId, buttons);
+  else void bot.broadcast(text, buttons);
   log.ok(
     `SIGNAL ${signal.symbol} score=${signal.score} risk=${signal.riskLevel}(${signal.riskScore}) +${signal.windowChangePct}% vol=${signal.volumeSurge}x`,
   );
@@ -66,6 +66,7 @@ function statusText(): string {
     `Liquid (≥$${cfg.thresholds.minQuoteVolume.toLocaleString()}): ${st.liquidCount}`,
     `Scans: ${st.scans} · last deep-scan ${st.deepScanned} in ${st.lastScanMs}ms`,
     `Signals sent: ${st.signalsTotal}`,
+    `Alert targets: ${bot.targets().length} chat(s)`,
   ];
   if (st.lastNearMiss) {
     const n = st.lastNearMiss;
@@ -207,8 +208,8 @@ async function main() {
   }
 
   let ready = await tryInit();
-  if (ready && username && cfg.chatId) {
-    await bot.send(
+  if (ready && username) {
+    await bot.broadcast(
       `🚀 <b>Pump Scanner started</b>\nWatching ${scanner.stats.symbolsTracked} ${cfg.quote} markets on ${cfg.exchange}.\nMin move +${cfg.thresholds.minWindowChangePct}% / ${cfg.thresholds.windowMinutes}m · ${cfg.thresholds.minVolumeSurge}× volume.`,
     );
   }
@@ -219,7 +220,7 @@ async function main() {
     if (!paused) {
       if (!ready) {
         ready = await tryInit();
-        if (ready) await bot.send("✅ Connected to the exchange — scanning now.");
+        if (ready) await bot.broadcast("✅ Connected to the exchange — scanning now.");
       }
       if (ready) {
         try {
@@ -233,8 +234,8 @@ async function main() {
           lastHeartbeat = Date.now();
           const top = scanner.topMovers(1)[0];
           const topStr = top ? `Top: ${top.symbol} ${top.percentage >= 0 ? "+" : ""}${top.percentage.toFixed(1)}%` : "";
-          if (username && cfg.chatId) {
-            await bot.send(
+          if (username) {
+            await bot.broadcast(
               `💓 <b>Still scanning</b> ${scanner.stats.symbolsTracked} markets on ${cfg.exchange}.\n` +
                 `${scanner.stats.scans} scans · ${scanner.stats.signalsTotal} signals so far. ${topStr}`,
             );

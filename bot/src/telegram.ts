@@ -22,11 +22,30 @@ export class TelegramBot {
   private offset = 0;
   private polling = false;
   private handlers = new Map<string, CommandHandler>();
+  /** Chats that have interacted with the bot — auto-captured broadcast targets. */
+  private knownChats = new Set<string>();
 
-  constructor(private token: string, private defaultChatId: string) {}
+  constructor(private token: string, private defaultChatId: string) {
+    if (defaultChatId) this.knownChats.add(defaultChatId);
+  }
 
   private url(method: string) {
     return `${API}/bot${this.token}/${method}`;
+  }
+
+  /** All chats that should receive auto-alerts (configured + anyone who messaged). */
+  targets(): string[] {
+    return [...this.knownChats];
+  }
+
+  /** Broadcast a message to every known chat (configured chat + command senders). */
+  async broadcast(text: string, buttons?: InlineButton[][]): Promise<void> {
+    const targets = this.targets();
+    if (targets.length === 0) {
+      log.warn("No chat to alert yet — send the bot /start. Message suppressed:\n" + text);
+      return;
+    }
+    for (const chatId of targets) await this.send(text, chatId, buttons);
   }
 
   async send(
@@ -109,6 +128,8 @@ export class TelegramBot {
   private async dispatch(u: TgUpdate): Promise<void> {
     const msg = u.message;
     if (!msg?.text) return;
+    // Remember this chat so it receives auto-alerts (no env var needed).
+    this.knownChats.add(String(msg.chat.id));
     const text = msg.text.trim();
     if (!text.startsWith("/")) return;
     // "/set@MyBot key val" -> cmd "set", args ["key","val"]
