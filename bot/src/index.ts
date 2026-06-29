@@ -15,10 +15,11 @@ const runOnce = process.argv.includes("--once");
 
 const bot = new TelegramBot(cfg.telegramToken, cfg.chatId);
 const scanner = new Scanner(cfg, (signal) => {
-  const text = formatSignal(signal, cfg.exchange);
+  const text = formatSignal(signal, cfg.exchange, cfg.marketType);
+  const tradeLabel = `${cfg.exchange.toUpperCase()} ${cfg.marketType === "swap" ? "Swap" : "Spot"} ↗`;
   const buttons = [
     [
-      { text: `${cfg.exchange.toUpperCase()} Swap ↗`, url: scanner.market.tradeUrl(signal.symbol) },
+      { text: tradeLabel, url: scanner.market.tradeUrl(signal.symbol) },
       { text: "Dex Screener ↗", url: scanner.market.dexScreenerUrl(signal.symbol) },
     ],
   ];
@@ -59,7 +60,7 @@ function statusText(): string {
   const st = scanner.stats;
   const lines = [
     `<b>Pump Scanner</b> ${paused ? "⏸ paused" : "▶️ running"}`,
-    `Exchange: <code>${scanner.market.id}</code>`,
+    `Exchange: <code>${scanner.market.id} ${cfg.marketType}</code>`,
     `Uptime: ${uptime(Date.now() - st.startedAt)}`,
     `Markets tracked: ${st.symbolsTracked}`,
     `Liquid (≥$${cfg.thresholds.minQuoteVolume.toLocaleString()}): ${st.liquidCount}`,
@@ -225,7 +226,7 @@ async function main() {
   let ready = await tryInit();
   if (ready && username) {
     await bot.broadcast(
-      `🚀 <b>Pump Scanner started</b>\nWatching ${scanner.stats.symbolsTracked} ${cfg.quote} markets on ${cfg.exchange}.\nMin move +${cfg.thresholds.minWindowChangePct}% / ${cfg.thresholds.windowMinutes}m · ${cfg.thresholds.minVolumeSurge}× volume.`,
+      `🚀 <b>Pump Scanner started</b>\nWatching ${scanner.stats.symbolsTracked} ${cfg.quote} ${cfg.marketType} markets on ${cfg.exchange}.\nMin move +${cfg.thresholds.minWindowChangePct}% · ${cfg.thresholds.minVolumeSurge}× volume.`,
     );
   }
 

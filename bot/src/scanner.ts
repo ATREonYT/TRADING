@@ -45,7 +45,7 @@ export class Scanner {
   stats: ScanStats;
 
   constructor(private cfg: Config, private onSignal: (s: Signal) => void, market?: Market) {
-    this.market = market ?? new Market(cfg.exchange, cfg.quote);
+    this.market = market ?? new Market(cfg.exchange, cfg.quote, cfg.marketType);
     this.tracker = new SignalTracker(cfg.trackHorizonMinutes, cfg.winThresholdPct);
     this.stats = {
       startedAt: Date.now(),
@@ -76,7 +76,10 @@ export class Scanner {
   /** Normalise user input ("pepe", "PEPE/USDT") to a full symbol on this exchange. */
   resolveSymbol(input: string): string {
     let s = input.trim().toUpperCase();
-    if (!s.includes("/")) s = `${s}/${this.cfg.quote}`;
+    const q = this.cfg.quote;
+    if (!s.includes("/")) s = `${s}/${q}`;
+    // Futures markets use the "BASE/USDT:USDT" form.
+    if (this.cfg.marketType === "swap" && !s.includes(":")) s = `${s}:${q}`;
     return s;
   }
 

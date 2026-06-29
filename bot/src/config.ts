@@ -43,6 +43,8 @@ export interface Config {
   chatId: string;
   exchange: string;
   quote: string;
+  /** "spot" or "swap" (linear USDT perpetual futures). */
+  marketType: "spot" | "swap";
   scanIntervalSec: number;
   /** Symbols deep-scanned per cycle (a rotating batch — covers ALL coins over time). */
   maxDeepScan: number;
@@ -68,6 +70,7 @@ export function loadConfig(): Config {
     chatId: envStr("TELEGRAM_CHAT_ID", ""),
     exchange: envStr("EXCHANGE", "binance"),
     quote: envStr("QUOTE_CURRENCY", "USDT"),
+    marketType: envStr("MARKET_TYPE", "spot").toLowerCase() === "swap" ? "swap" : "spot",
     scanIntervalSec: envNum("SCAN_INTERVAL_SEC", 15),
     maxDeepScan: envNum("MAX_DEEP_SCAN", 120),
     moversPerScan: envNum("MOVERS_PER_SCAN", 25),

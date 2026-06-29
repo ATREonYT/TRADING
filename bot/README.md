@@ -77,6 +77,11 @@ adjustable at runtime via `/set`. Exchange can be any
 [ccxt](https://github.com/ccxt/ccxt)-supported id (`binance`, `bybit`, `okx`, `kucoin`,
 `mexc`, …) — read-only market data, **no API key required**.
 
+**Spot or futures:** set `MARKET_TYPE=swap` to scan **linear USDT perpetual futures**
+(where most pumps/dumps happen) instead of spot. Alerts then link to the exchange's
+futures page and show `(swap)`. Run a second instance with `MARKET_TYPE=spot` if you want
+both at once.
+
 ### Network note
 
 Market data is fetched from the exchange's public REST API (e.g. `api.binance.com`). If you

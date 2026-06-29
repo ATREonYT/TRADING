@@ -25,17 +25,18 @@ function fmtPrice(n: number): string {
 const RISK_EMOJI = { low: "🟢", medium: "🟡", high: "🔴" } as const;
 
 /** Format a pump signal in the clean pump-channel style (matches reference bots). */
-export function formatSignal(s: Signal, exchangeName: string): string {
+export function formatSignal(s: Signal, exchangeName: string, marketType: "spot" | "swap" = "spot"): string {
   const base = s.symbol.split("/")[0] ?? s.symbol;
   const heat = s.score >= 80 ? "🚀🚀🚀" : s.score >= 65 ? "🚀🚀" : "🚀";
   const windowSeconds = s.windowSec;
+  const exLabel = `${exchangeName.toUpperCase()}${marketType === "swap" ? " (swap)" : ""}`;
   const priceFrom = s.price / (1 + s.windowChangePct / 100);
   const pressure =
     s.buyPressure !== undefined ? ` · book ${s.buyPressure}×${s.buyPressure >= 1 ? "📈" : "📉"}` : "";
   const riskNote = s.riskFlags.length ? ` <i>(${esc(s.riskFlags.slice(0, 2).join(", "))})</i>` : "";
   const lines = [
     `${heat} <b>${esc(base)}</b> +${s.windowChangePct}% in ${windowSeconds}s`,
-    `> Exchange: ${esc(exchangeName.toUpperCase())}`,
+    `> Exchange: ${esc(exLabel)}`,
     `> ${fmtPrice(priceFrom)} → ${fmtPrice(s.price)}`,
     `> Volume24: $${fmtCompact(s.quoteVolume)}`,
     `> Surge: ${s.volumeSurge}× · RSI ${s.rsi}${pressure}`,
