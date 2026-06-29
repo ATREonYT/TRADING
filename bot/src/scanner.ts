@@ -164,7 +164,7 @@ export class Scanner {
       for (const ticker of candidates) {
         if (this.inCooldown(ticker.symbol, now)) continue;
         try {
-          const raw = await this.market.fetchCandles(ticker.symbol, 61);
+          const raw = await this.market.fetchCandles(ticker.symbol, 91);
           // Drop the still-forming current 1m candle — its partial volume would
           // otherwise sink volumeSurge below threshold and suppress every signal.
           const candles = raw.length > 1 ? raw.slice(0, -1) : raw;
@@ -231,7 +231,9 @@ export class Scanner {
       this.stats.symbolsTracked = tickers.length;
       this.stats.lastNearMiss = found.length ? undefined : nearMiss;
       found.sort((a, b) => b.score - a.score);
-      for (const s of found) {
+      // Cap alerts per cycle (strongest first) so a hot market doesn't flood you.
+      const toSend = found.slice(0, this.cfg.maxAlertsPerCycle);
+      for (const s of toSend) {
         this.stats.signalsTotal++;
         this.tracker.track(s, s.at);
         this.onSignal(s);

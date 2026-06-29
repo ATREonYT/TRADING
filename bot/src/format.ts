@@ -25,9 +25,10 @@ function fmtPrice(n: number): string {
 const RISK_EMOJI = { low: "🟢", medium: "🟡", high: "🔴" } as const;
 
 /** Format a pump signal in the clean pump-channel style (matches reference bots). */
-export function formatSignal(s: Signal, exchangeName: string, windowSeconds: number): string {
+export function formatSignal(s: Signal, exchangeName: string): string {
   const base = s.symbol.split("/")[0] ?? s.symbol;
   const heat = s.score >= 80 ? "🚀🚀🚀" : s.score >= 65 ? "🚀🚀" : "🚀";
+  const windowSeconds = s.windowSec;
   const priceFrom = s.price / (1 + s.windowChangePct / 100);
   const pressure =
     s.buyPressure !== undefined ? ` · book ${s.buyPressure}×${s.buyPressure >= 1 ? "📈" : "📉"}` : "";

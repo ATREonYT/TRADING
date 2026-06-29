@@ -62,6 +62,21 @@ export function orderBookImbalance(bidVol: number, askVol: number): number {
   return bidVol / askVol;
 }
 
+/**
+ * Window-consistent volume surge: average volume over the last `w` candles vs
+ * the `w` candles before them. Lets a slow grind and a 1m spike each be judged
+ * against their own timeframe. Returns 1 if there isn't enough history.
+ */
+export function volumeSurgeWindow(candles: Candle[], w: number): number {
+  if (w < 1 || candles.length < 2 * w) return volumeSurge(candles, Math.min(20, candles.length - 1));
+  const last = candles.slice(candles.length - w);
+  const prev = candles.slice(candles.length - 2 * w, candles.length - w);
+  const lastAvg = last.reduce((a, c) => a + c.volume, 0) / w;
+  const prevAvg = prev.reduce((a, c) => a + c.volume, 0) / w;
+  if (prevAvg <= 0) return lastAvg > 0 ? Infinity : 1;
+  return lastAvg / prevAvg;
+}
+
 /** Count of consecutive bullish (close >= open) candles ending at the latest. */
 export function consecutiveUp(candles: Candle[]): number {
   let n = 0;

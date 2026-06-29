@@ -84,6 +84,26 @@ test("RSI gate rejects already-overbought moves", () => {
   assert.equal(sig, null);
 });
 
+test("catches a slow grind via a longer window (multi-timeframe)", () => {
+  // 50 flat candles, then 16 candles grinding +0.4%/min with elevated volume.
+  // A 3m window sees only ~+1.2% (below 4%), but the 15m window sees ~+6%.
+  const candle = (close: number, open = close, volume = 100): Candle => ({
+    t: 0, open, close, high: Math.max(open, close), low: Math.min(open, close), volume,
+  });
+  const c: Candle[] = [];
+  for (let i = 0; i < 50; i++) c.push(candle(100, 100, 100));
+  let price = 100;
+  for (let i = 0; i < 16; i++) {
+    const open = price;
+    const close = price * 1.004;
+    c.push({ t: 50 + i, open, close, high: close, low: open, volume: 300 });
+    price = close;
+  }
+  const sig = evaluate("GRIND/USDT", c, ticker(), { ...T, minWindowChangePct: 4, minVolumeSurge: 1.5, minScore: 0 });
+  assert.ok(sig, "slow grind should fire via a longer window");
+  assert.ok(sig!.windowSec > 3 * 60, `winning window ${sig!.windowSec}s should exceed 3m`);
+});
+
 test("bigger move scores higher", () => {
   const small = evaluate("A/USDT", buildSeries(1.0, 600), ticker(), { ...T, minScore: 0 });
   const big = evaluate("B/USDT", buildSeries(3.0, 2000), ticker(), { ...T, minScore: 0 });

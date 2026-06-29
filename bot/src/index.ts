@@ -15,8 +15,7 @@ const runOnce = process.argv.includes("--once");
 
 const bot = new TelegramBot(cfg.telegramToken, cfg.chatId);
 const scanner = new Scanner(cfg, (signal) => {
-  const windowSeconds = cfg.thresholds.windowMinutes * 60;
-  const text = formatSignal(signal, cfg.exchange, windowSeconds);
+  const text = formatSignal(signal, cfg.exchange);
   const buttons = [
     [
       { text: `${cfg.exchange.toUpperCase()} Swap ↗`, url: scanner.market.tradeUrl(signal.symbol) },
@@ -96,6 +95,20 @@ const helpText = [
   "",
   "<i>Signals are momentum alerts, not financial advice.</i>",
 ].join("\n");
+
+const COMMAND_MENU = [
+  { command: "scan", description: "Force a scan right now" },
+  { command: "top", description: "Current top movers" },
+  { command: "status", description: "Scanner health" },
+  { command: "risk", description: "Scam/risk check a coin (e.g. /risk PEPE)" },
+  { command: "performance", description: "How past signals played out" },
+  { command: "track", description: "Open paper-trades right now" },
+  { command: "settings", description: "View detection thresholds" },
+  { command: "set", description: "Tune a threshold (/set minScore 20)" },
+  { command: "pause", description: "Pause alerts" },
+  { command: "resume", description: "Resume alerts" },
+  { command: "help", description: "Show all commands" },
+];
 
 bot.on("start", () => helpText);
 bot.on("help", () => helpText);
@@ -193,6 +206,8 @@ async function main() {
   const username = await bot.getMe();
   if (username) {
     log.ok(`Connected to Telegram as @${username}`);
+    // Register the "/" menu so commands are selectable in the Telegram UI.
+    await bot.setMyCommands(COMMAND_MENU);
     // Start the command listener FIRST so /status etc. work even if the exchange is down.
     if (!runOnce) void bot.startPolling();
   } else {

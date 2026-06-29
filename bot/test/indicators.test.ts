@@ -8,6 +8,7 @@ import {
   rsi,
   sma,
   volumeSurge,
+  volumeSurgeWindow,
   windowChangePct,
 } from "../src/indicators.js";
 
@@ -48,6 +49,12 @@ test("volumeSurge compares latest to prior average", () => {
 
 test("volumeSurge returns 1 without enough data", () => {
   assert.equal(volumeSurge([candle(100)], 20), 1);
+});
+
+test("volumeSurgeWindow compares last w vs prior w candles", () => {
+  const prev = Array.from({ length: 5 }, () => candle(100, 100, 100));
+  const last = Array.from({ length: 5 }, () => candle(100, 100, 300));
+  assert.equal(volumeSurgeWindow([...prev, ...last], 5), 3);
 });
 
 test("consecutiveUp counts trailing green candles", () => {

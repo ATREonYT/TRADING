@@ -5,7 +5,7 @@ import { SignalTracker } from "../src/tracker.js";
 
 function signal(symbol: string, price: number, at: number): Signal {
   return {
-    symbol, price, score: 70, windowChangePct: 5, volumeSurge: 4, change24h: 10,
+    symbol, price, score: 70, windowChangePct: 5, windowSec: 180, volumeSurge: 4, change24h: 10,
     quoteVolume: 1_000_000, rsi: 65, consecutiveUp: 3, brokeOut: true, volAccel: 2,
     riskScore: 20, riskLevel: "low", riskFlags: [], reasons: [], at,
   };

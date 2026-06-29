@@ -64,11 +64,8 @@ export function assessRisk(
       score += 8;
       flags.push("one-sided book (possible spoof)");
     }
-  } else {
-    // No book data — can't verify depth; small uncertainty penalty.
-    score += 6;
-    flags.push("order book unavailable");
   }
+  // No order book is fine — it's an optional check; we don't penalise its absence.
 
   // 3) Already parabolic — buying here is often buying the dump.
   if (ticker.percentage > 80) {

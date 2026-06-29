@@ -57,27 +57,50 @@ export class TelegramBot {
       log.warn("Telegram not configured — message suppressed:\n" + text);
       return;
     }
+    const body: Record<string, unknown> = {
+      chat_id: chatId,
+      text,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    };
+    if (buttons?.length) body.reply_markup = { inline_keyboard: buttons };
+
     try {
-      const body: Record<string, unknown> = {
-        chat_id: chatId,
-        text,
-        parse_mode: "HTML",
-        disable_web_page_preview: true,
-      };
-      if (buttons?.length) {
-        body.reply_markup = { inline_keyboard: buttons };
-      }
-      const res = await fetch(this.url("sendMessage"), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const body = await res.text();
-        log.warn(`sendMessage ${res.status}: ${body}`);
+      const res = await this.post("sendMessage", body);
+      if (res.ok) return;
+      const errText = await res.text();
+      log.warn(`sendMessage ${res.status}: ${errText}`);
+      // 400 usually means bad HTML/markup — retry as plain text so the alert
+      // is never silently lost.
+      if (res.status === 400) {
+        const plain = text.replace(/<[^>]+>/g, "");
+        const res2 = await this.post("sendMessage", {
+          chat_id: chatId,
+          text: plain,
+          disable_web_page_preview: true,
+        });
+        if (!res2.ok) log.warn(`sendMessage retry ${res2.status}: ${await res2.text()}`);
       }
     } catch (err) {
       log.warn("sendMessage failed:", (err as Error).message);
+    }
+  }
+
+  private post(method: string, body: Record<string, unknown>) {
+    return fetch(this.url(method), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  /** Register the slash-command menu shown when the user types "/". */
+  async setMyCommands(commands: Array<{ command: string; description: string }>): Promise<void> {
+    if (!this.token) return;
+    try {
+      await this.post("setMyCommands", { commands });
+    } catch (err) {
+      log.warn("setMyCommands failed:", (err as Error).message);
     }
   }
 

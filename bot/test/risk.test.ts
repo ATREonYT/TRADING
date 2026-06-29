@@ -45,7 +45,9 @@ test("already parabolic on 24h is flagged as late", () => {
   assert.ok(r.flags.some((f) => /late|24h/.test(f)));
 });
 
-test("missing order book adds an uncertainty flag", () => {
-  const r = assessRisk(candles, ticker(), null, 5);
-  assert.ok(r.flags.some((f) => /order book unavailable/.test(f)));
+test("missing order book is not penalised (optional check)", () => {
+  const withBook = assessRisk(candles, ticker(), goodBook, 5);
+  const without = assessRisk(candles, ticker(), null, 5);
+  assert.ok(without.score <= withBook.score + 1);
+  assert.ok(!without.flags.some((f) => /unavailable/.test(f)));
 });

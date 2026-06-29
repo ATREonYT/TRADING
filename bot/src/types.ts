@@ -36,6 +36,8 @@ export interface Signal {
   score: number;
   /** short-window price change % used for the trigger */
   windowChangePct: number;
+  /** length of the winning window, in seconds (for "in Ns" display) */
+  windowSec: number;
   /** volume of trigger candle vs recent average */
   volumeSurge: number;
   /** 24h change for context */

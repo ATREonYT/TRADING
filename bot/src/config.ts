@@ -50,6 +50,8 @@ export interface Config {
   moversPerScan: number;
   /** Confirm buy-side pressure in the live order book before alerting. */
   checkOrderBook: boolean;
+  /** Max alerts sent per scan cycle (anti-flood; top by score). */
+  maxAlertsPerCycle: number;
   /** Minutes between "still alive" heartbeat messages. 0 = off. */
   heartbeatMinutes: number;
   /** How long to paper-track each signal's outcome, in minutes. */
@@ -69,7 +71,8 @@ export function loadConfig(): Config {
     scanIntervalSec: envNum("SCAN_INTERVAL_SEC", 15),
     maxDeepScan: envNum("MAX_DEEP_SCAN", 120),
     moversPerScan: envNum("MOVERS_PER_SCAN", 25),
-    checkOrderBook: envBool("CHECK_ORDER_BOOK", true),
+    checkOrderBook: envBool("CHECK_ORDER_BOOK", false),
+    maxAlertsPerCycle: envNum("MAX_ALERTS_PER_CYCLE", 8),
     heartbeatMinutes: envNum("HEARTBEAT_MINUTES", 60),
     trackHorizonMinutes: envNum("TRACK_HORIZON_MINUTES", 60),
     winThresholdPct: envNum("WIN_THRESHOLD_PCT", 5),
@@ -77,12 +80,12 @@ export function loadConfig(): Config {
     thresholds: {
       windowMinutes: envNum("WINDOW_MINUTES", 3),
       minWindowChangePct: envNum("MIN_WINDOW_CHANGE_PCT", 2),
-      minVolumeSurge: envNum("MIN_VOLUME_SURGE", 1.8),
+      minVolumeSurge: envNum("MIN_VOLUME_SURGE", 1.5),
       minQuoteVolume: envNum("MIN_QUOTE_VOLUME", 100_000),
-      maxRsi: envNum("MAX_RSI", 90),
-      minScore: envNum("MIN_SCORE", 30),
-      maxRiskScore: envNum("MAX_RISK_SCORE", 75),
-      cooldownMinutes: envNum("COOLDOWN_MINUTES", 12),
+      maxRsi: envNum("MAX_RSI", 92),
+      minScore: envNum("MIN_SCORE", 22),
+      maxRiskScore: envNum("MAX_RISK_SCORE", 80),
+      cooldownMinutes: envNum("COOLDOWN_MINUTES", 10),
     },
   };
 }
