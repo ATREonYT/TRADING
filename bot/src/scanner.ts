@@ -117,8 +117,10 @@ export class Scanner {
 
       // Prefilter: liquid markets with positive short-term momentum, ranked by
       // 24h change as a cheap proxy, then deep-scan the top N with klines.
+      // Rank liquid markets by 24h move and deep-scan the top N. We don't require
+      // a positive 24h change — a coin can be red on the day but pumping right now.
       const candidates = tickers
-        .filter((t) => t.quoteVolume >= this.cfg.thresholds.minQuoteVolume && t.percentage > 0)
+        .filter((t) => t.quoteVolume >= this.cfg.thresholds.minQuoteVolume)
         .sort((a, b) => b.percentage - a.percentage)
         .slice(0, this.cfg.maxDeepScan);
 
@@ -147,8 +149,8 @@ export class Scanner {
                   threshold: 1.2,
                 });
                 signal.score = Math.min(100, signal.score + 6);
-              } else if (imb < 0.6) {
-                // heavy sell wall — likely fading; skip this one
+              } else if (imb < 0.4) {
+                // very heavy sell wall — likely fading; skip this one
                 continue;
               }
             }
