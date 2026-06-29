@@ -44,8 +44,10 @@ export interface Config {
   exchange: string;
   quote: string;
   scanIntervalSec: number;
-  /** Max symbols to deep-scan (fetch klines) per cycle after prefilter. */
+  /** Symbols deep-scanned per cycle (a rotating batch — covers ALL coins over time). */
   maxDeepScan: number;
+  /** Top 24h movers always deep-scanned every cycle (on top of the rotating batch). */
+  moversPerScan: number;
   /** Confirm buy-side pressure in the live order book before alerting. */
   checkOrderBook: boolean;
   /** Minutes between "still alive" heartbeat messages. 0 = off. */
@@ -65,7 +67,8 @@ export function loadConfig(): Config {
     exchange: envStr("EXCHANGE", "binance"),
     quote: envStr("QUOTE_CURRENCY", "USDT"),
     scanIntervalSec: envNum("SCAN_INTERVAL_SEC", 15),
-    maxDeepScan: envNum("MAX_DEEP_SCAN", 60),
+    maxDeepScan: envNum("MAX_DEEP_SCAN", 120),
+    moversPerScan: envNum("MOVERS_PER_SCAN", 25),
     checkOrderBook: envBool("CHECK_ORDER_BOOK", true),
     heartbeatMinutes: envNum("HEARTBEAT_MINUTES", 60),
     trackHorizonMinutes: envNum("TRACK_HORIZON_MINUTES", 60),

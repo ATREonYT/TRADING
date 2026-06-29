@@ -24,27 +24,23 @@ function fmtPrice(n: number): string {
 
 const RISK_EMOJI = { low: "🟢", medium: "🟡", high: "🔴" } as const;
 
-/** Format a pump signal in the clean pump-channel style. */
+/** Format a pump signal in the clean pump-channel style (matches reference bots). */
 export function formatSignal(s: Signal, exchangeName: string, windowSeconds: number): string {
   const base = s.symbol.split("/")[0] ?? s.symbol;
   const heat = s.score >= 80 ? "🚀🚀🚀" : s.score >= 65 ? "🚀🚀" : "🚀";
   const priceFrom = s.price / (1 + s.windowChangePct / 100);
   const pressure =
-    s.buyPressure !== undefined
-      ? ` · book ${s.buyPressure}× ${s.buyPressure >= 1 ? "buy" : "sell"}`
-      : "";
+    s.buyPressure !== undefined ? ` · book ${s.buyPressure}×${s.buyPressure >= 1 ? "📈" : "📉"}` : "";
   const riskNote = s.riskFlags.length ? ` <i>(${esc(s.riskFlags.slice(0, 2).join(", "))})</i>` : "";
   const lines = [
-    `${heat} <b>${esc(base)}</b>  +${s.windowChangePct}% in ${windowSeconds}s`,
+    `${heat} <b>${esc(base)}</b> +${s.windowChangePct}% in ${windowSeconds}s`,
     `> Exchange: ${esc(exchangeName.toUpperCase())}`,
-    `> ${fmtPrice(priceFrom)} → <b>${fmtPrice(s.price)}</b>`,
-    `> Volume 24h: ${fmtCompact(s.quoteVolume)}`,
-    `> Surge: ${s.volumeSurge}× · accel ${s.volAccel}× · RSI ${s.rsi}`,
-    `> Risk: ${RISK_EMOJI[s.riskLevel]} <b>${s.riskLevel.toUpperCase()}</b>${riskNote}`,
-    `> Score: <b>${s.score}/100</b>${pressure}`,
+    `> ${fmtPrice(priceFrom)} → ${fmtPrice(s.price)}`,
+    `> Volume24: $${fmtCompact(s.quoteVolume)}`,
+    `> Surge: ${s.volumeSurge}× · RSI ${s.rsi}${pressure}`,
+    `> Risk: ${RISK_EMOJI[s.riskLevel]} ${s.riskLevel.toUpperCase()} · Score ${s.score}/100${riskNote}`,
     ``,
     `#${esc(base)} #${esc(base)}_pump`,
-    `<i>Not financial advice · high-risk · verify &amp; use a stop</i>`,
   ];
   return lines.join("\n");
 }

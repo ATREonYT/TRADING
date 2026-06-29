@@ -19,8 +19,8 @@ const scanner = new Scanner(cfg, (signal) => {
   const text = formatSignal(signal, cfg.exchange, windowSeconds);
   const buttons = [
     [
-      { text: `🟢 Buy on ${cfg.exchange.toUpperCase()}`, url: scanner.market.tradeUrl(signal.symbol) },
-      { text: "📊 Dex Screener", url: scanner.market.dexScreenerUrl(signal.symbol) },
+      { text: `${cfg.exchange.toUpperCase()} Swap ↗`, url: scanner.market.tradeUrl(signal.symbol) },
+      { text: "Dex Screener ↗", url: scanner.market.dexScreenerUrl(signal.symbol) },
     ],
   ];
   if (cfg.dryRun) log.ok("[DRY_RUN] signal:\n" + text);

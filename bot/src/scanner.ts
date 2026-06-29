@@ -41,6 +41,7 @@ export class Scanner {
   readonly tracker: SignalTracker;
   private cooldownUntil = new Map<string, number>();
   private lastTickers: TickerLite[] = [];
+  private cursor = 0; // rotating scan position over the liquid universe
   stats: ScanStats;
 
   constructor(private cfg: Config, private onSignal: (s: Signal) => void, market?: Market) {
@@ -129,11 +130,33 @@ export class Scanner {
       const priceMap = new Map(tickers.map((t) => [t.symbol, t.last]));
       this.tracker.update(priceMap, Date.now());
 
-      // Rank liquid markets by 24h move and deep-scan the top N. We don't require
-      // a positive 24h change — a coin can be red on the day but pumping right now.
       const liquid = tickers.filter((t) => t.quoteVolume >= this.cfg.thresholds.minQuoteVolume);
-      const candidates = [...liquid].sort((a, b) => b.percentage - a.percentage).slice(0, this.cfg.maxDeepScan);
       this.stats.liquidCount = liquid.length;
+
+      // Coverage strategy: every cycle we scan (a) the strongest 24h movers, and
+      // (b) a ROTATING batch over the full liquid universe — so across a couple of
+      // minutes EVERY coin is checked, while fast movers are never missed.
+      const movers = [...liquid]
+        .sort((a, b) => b.percentage - a.percentage)
+        .slice(0, this.cfg.moversPerScan);
+
+      const batch: TickerLite[] = [];
+      const n = liquid.length;
+      if (n > 0) {
+        for (let i = 0; i < this.cfg.maxDeepScan && i < n; i++) {
+          batch.push(liquid[(this.cursor + i) % n]!);
+        }
+        this.cursor = (this.cursor + Math.min(this.cfg.maxDeepScan, n)) % n;
+      }
+
+      const seen = new Set<string>();
+      const candidates: TickerLite[] = [];
+      for (const t of [...movers, ...batch]) {
+        if (!seen.has(t.symbol)) {
+          seen.add(t.symbol);
+          candidates.push(t);
+        }
+      }
 
       const now = Date.now();
       let deep = 0;
