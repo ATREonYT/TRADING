@@ -15,26 +15,38 @@ function ramp(x: number, min: number, max: number): number {
   return Math.max(0, Math.min(1, (x - min) / (max - min)));
 }
 
+export interface EvalResult {
+  signal: Signal | null;
+  metrics: { change: number; surge: number; rsi: number; score: number; volAccel: number };
+  /** Human-readable reason it did NOT fire, or null when it did. */
+  reject: string | null;
+}
+
+const NO_METRICS = { change: 0, surge: 0, rsi: 0, score: 0, volAccel: 0 };
+
 /**
- * Evaluate one symbol for a pump signal.
+ * Evaluate one symbol for a pump signal, returning full diagnostics.
  *
- * A signal requires BOTH a fast price move AND a volume surge over the window —
- * price alone is noise, volume alone is accumulation. The composite score blends
- * momentum, volume, breakout, and acceleration, then penalises already-overbought
- * names (high RSI = likely late to the move).
- *
- * Returns null when the candidate fails a hard gate or scores below `minScore`.
+ * A signal requires BOTH a fast price move AND a volume surge over the window.
+ * The composite score blends momentum, volume, breakout, and acceleration, then
+ * penalises already-overbought names. Always reports why it did/didn't fire.
  */
-export function evaluate(
+export function evaluateDetailed(
   symbol: string,
   candles: Candle[],
   ticker: TickerLite,
   t: Thresholds,
-): Signal | null {
-  if (candles.length < t.windowMinutes + 2) return null;
-
-  // Hard liquidity gate — never surface illiquid, easily-manipulated markets.
-  if (ticker.quoteVolume < t.minQuoteVolume) return null;
+): EvalResult {
+  if (candles.length < t.windowMinutes + 2) {
+    return { signal: null, metrics: NO_METRICS, reject: "insufficient candle history" };
+  }
+  if (ticker.quoteVolume < t.minQuoteVolume) {
+    return {
+      signal: null,
+      metrics: NO_METRICS,
+      reject: `illiquid ($${Math.round(ticker.quoteVolume).toLocaleString()} < $${t.minQuoteVolume.toLocaleString()})`,
+    };
+  }
 
   const price = candles[candles.length - 1]!.close;
   const change = windowChangePct(candles, t.windowMinutes);
@@ -44,11 +56,43 @@ export function evaluate(
   const brokeOut = isBreakout(candles, 30);
   const volAccel = volumeAcceleration(candles);
 
-  // Hard gates: the two defining traits of a pump.
-  if (change < t.minWindowChangePct) return null;
-  if (surge < t.minVolumeSurge) return null;
-  // Already overbought — likely chasing the top.
-  if (r > t.maxRsi) return null;
+  // --- composite score (0-100) ---
+  const sMomentum = ramp(change, t.minWindowChangePct, t.minWindowChangePct * 3);
+  const sVolume = ramp(surge, t.minVolumeSurge, t.minVolumeSurge * 3.3);
+  const sBreakout = brokeOut ? 1 : 0;
+  const sAccel = ramp(conUp, 2, 6);
+  const sVolAccel = ramp(volAccel, 1.2, 3);
+  const overbought = ramp(r, 60, t.maxRsi);
+  const raw =
+    0.36 * sMomentum +
+    0.32 * sVolume +
+    0.14 * sBreakout +
+    0.08 * sAccel +
+    0.1 * sVolAccel -
+    0.25 * overbought;
+  const score = Math.round(Math.max(0, Math.min(1, raw)) * 100);
+
+  const metrics = {
+    change: round(change),
+    surge: round(surge),
+    rsi: round(r),
+    score,
+    volAccel: round(volAccel),
+  };
+
+  // Hard gates — report the first one that fails, with numbers.
+  if (change < t.minWindowChangePct) {
+    return { signal: null, metrics, reject: `move +${change.toFixed(2)}% < ${t.minWindowChangePct}%` };
+  }
+  if (surge < t.minVolumeSurge) {
+    return { signal: null, metrics, reject: `volume ${surge.toFixed(1)}× < ${t.minVolumeSurge}×` };
+  }
+  if (r > t.maxRsi) {
+    return { signal: null, metrics, reject: `RSI ${r.toFixed(0)} > ${t.maxRsi}` };
+  }
+  if (score < t.minScore) {
+    return { signal: null, metrics, reject: `score ${score} < ${t.minScore}` };
+  }
 
   const reasons: SignalReason[] = [
     {
@@ -74,29 +118,7 @@ export function evaluate(
     reasons.push({ code: "vol-accel", label: `volume accelerating ${volAccel.toFixed(1)}×`, value: round(volAccel), threshold: 1.5 });
   }
 
-  // --- composite score (0-100) ---
-  // momentum: ramps from threshold up to 3× threshold
-  const sMomentum = ramp(change, t.minWindowChangePct, t.minWindowChangePct * 3);
-  // volume: ramps from threshold up to ~3.3× threshold
-  const sVolume = ramp(surge, t.minVolumeSurge, t.minVolumeSurge * 3.3);
-  const sBreakout = brokeOut ? 1 : 0;
-  const sAccel = ramp(conUp, 2, 6);
-  const sVolAccel = ramp(volAccel, 1.2, 3);
-  // overbought penalty: 0 below 60 RSI, up to -1 weight near maxRsi
-  const overbought = ramp(r, 60, t.maxRsi);
-
-  const raw =
-    0.36 * sMomentum +
-    0.32 * sVolume +
-    0.14 * sBreakout +
-    0.08 * sAccel +
-    0.1 * sVolAccel -
-    0.25 * overbought;
-
-  const score = Math.round(Math.max(0, Math.min(1, raw)) * 100);
-  if (score < t.minScore) return null;
-
-  return {
+  const signal: Signal = {
     symbol,
     price,
     score,
@@ -114,6 +136,17 @@ export function evaluate(
     reasons,
     at: Date.now(),
   };
+  return { signal, metrics, reject: null };
+}
+
+/** Convenience wrapper: just the signal (or null). */
+export function evaluate(
+  symbol: string,
+  candles: Candle[],
+  ticker: TickerLite,
+  t: Thresholds,
+): Signal | null {
+  return evaluateDetailed(symbol, candles, ticker, t).signal;
 }
 
 const round = (n: number) => Math.round(n * 100) / 100;

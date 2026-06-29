@@ -58,15 +58,23 @@ function settingsText(t: Thresholds): string {
 
 function statusText(): string {
   const st = scanner.stats;
-  return [
+  const lines = [
     `<b>Pump Scanner</b> ${paused ? "⏸ paused" : "▶️ running"}`,
     `Exchange: <code>${scanner.market.id}</code>`,
     `Uptime: ${uptime(Date.now() - st.startedAt)}`,
     `Markets tracked: ${st.symbolsTracked}`,
-    `Scans: ${st.scans} · last deep-scan ${st.deepScanned} symbols in ${st.lastScanMs}ms`,
+    `Liquid (≥$${cfg.thresholds.minQuoteVolume.toLocaleString()}): ${st.liquidCount}`,
+    `Scans: ${st.scans} · last deep-scan ${st.deepScanned} in ${st.lastScanMs}ms`,
     `Signals sent: ${st.signalsTotal}`,
-    st.lastError ? `Last error: <code>${st.lastError}</code>` : `Errors: ${st.errors}`,
-  ].join("\n");
+  ];
+  if (st.lastNearMiss) {
+    const n = st.lastNearMiss;
+    lines.push(
+      `Closest miss: ${n.symbol} +${n.change}% vol ${n.surge}× score ${n.score} — <i>${n.reject}</i>`,
+    );
+  }
+  lines.push(st.lastError ? `Last error: <code>${st.lastError}</code>` : `Errors: ${st.errors}`);
+  return lines.join("\n");
 }
 
 // --- command handlers ---
@@ -137,9 +145,22 @@ bot.on("resume", () => {
 });
 bot.on("scan", async () => {
   const found = await scanner.scanOnce();
-  return found.length
-    ? `Scan complete — ${found.length} signal(s). Top: ${found[0]!.symbol} (${found[0]!.score}/100)`
-    : "Scan complete — no signals right now.";
+  const st = scanner.stats;
+  if (found.length) {
+    return `Scan complete — ${found.length} signal(s). Top: ${found[0]!.symbol} (${found[0]!.score}/100)`;
+  }
+  const funnel = `Scanned ${st.symbolsTracked} markets → ${st.liquidCount} liquid → ${st.deepScanned} deep-scanned → 0 signals.`;
+  if (st.symbolsTracked === 0) {
+    return `${funnel}\n⚠️ No markets loaded — exchange not reachable. ${st.lastError ?? ""}`;
+  }
+  if (st.liquidCount === 0) {
+    return `${funnel}\n⚠️ Nothing passed the liquidity filter — lower it: <code>/set minQuoteVolume 50000</code>`;
+  }
+  if (st.lastNearMiss) {
+    const n = st.lastNearMiss;
+    return `${funnel}\nClosest: ${n.symbol} +${n.change}% vol ${n.surge}× rsi ${n.rsi} score ${n.score} — <i>${n.reject}</i>\nLoosen with /set to catch it.`;
+  }
+  return `${funnel}\nNothing close — markets are calm right now.`;
 });
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

@@ -1,11 +1,20 @@
 import type { Config } from "./config.js";
 import type { Signal, TickerLite } from "./types.js";
 import { Market } from "./exchange.js";
-import { evaluate } from "./detector.js";
+import { evaluateDetailed } from "./detector.js";
 import { orderBookImbalance, rsi, volumeSurge, windowChangePct } from "./indicators.js";
 import { assessRisk, type RiskResult } from "./risk.js";
 import { SignalTracker } from "./tracker.js";
 import { log } from "./logger.js";
+
+export interface NearMiss {
+  symbol: string;
+  change: number;
+  surge: number;
+  rsi: number;
+  score: number;
+  reject: string;
+}
 
 export interface ScanStats {
   startedAt: number;
@@ -13,8 +22,12 @@ export interface ScanStats {
   lastScanMs: number;
   scans: number;
   symbolsTracked: number;
+  /** Markets that passed the liquidity filter this cycle. */
+  liquidCount: number;
   deepScanned: number;
   signalsTotal: number;
+  /** Closest candidate that did NOT fire last cycle (diagnostics). */
+  lastNearMiss?: NearMiss;
   errors: number;
   lastError?: string;
 }
@@ -30,8 +43,8 @@ export class Scanner {
   private lastTickers: TickerLite[] = [];
   stats: ScanStats;
 
-  constructor(private cfg: Config, private onSignal: (s: Signal) => void) {
-    this.market = new Market(cfg.exchange, cfg.quote);
+  constructor(private cfg: Config, private onSignal: (s: Signal) => void, market?: Market) {
+    this.market = market ?? new Market(cfg.exchange, cfg.quote);
     this.tracker = new SignalTracker(cfg.trackHorizonMinutes, cfg.winThresholdPct);
     this.stats = {
       startedAt: Date.now(),
@@ -39,6 +52,7 @@ export class Scanner {
       lastScanMs: 0,
       scans: 0,
       symbolsTracked: 0,
+      liquidCount: 0,
       deepScanned: 0,
       signalsTotal: 0,
       errors: 0,
@@ -115,23 +129,36 @@ export class Scanner {
       const priceMap = new Map(tickers.map((t) => [t.symbol, t.last]));
       this.tracker.update(priceMap, Date.now());
 
-      // Prefilter: liquid markets with positive short-term momentum, ranked by
-      // 24h change as a cheap proxy, then deep-scan the top N with klines.
       // Rank liquid markets by 24h move and deep-scan the top N. We don't require
       // a positive 24h change — a coin can be red on the day but pumping right now.
-      const candidates = tickers
-        .filter((t) => t.quoteVolume >= this.cfg.thresholds.minQuoteVolume)
-        .sort((a, b) => b.percentage - a.percentage)
-        .slice(0, this.cfg.maxDeepScan);
+      const liquid = tickers.filter((t) => t.quoteVolume >= this.cfg.thresholds.minQuoteVolume);
+      const candidates = [...liquid].sort((a, b) => b.percentage - a.percentage).slice(0, this.cfg.maxDeepScan);
+      this.stats.liquidCount = liquid.length;
 
       const now = Date.now();
       let deep = 0;
+      let nearMiss: NearMiss | undefined;
       for (const ticker of candidates) {
         if (this.inCooldown(ticker.symbol, now)) continue;
         try {
-          const candles = await this.market.fetchCandles(ticker.symbol, 60);
+          const raw = await this.market.fetchCandles(ticker.symbol, 61);
+          // Drop the still-forming current 1m candle — its partial volume would
+          // otherwise sink volumeSurge below threshold and suppress every signal.
+          const candles = raw.length > 1 ? raw.slice(0, -1) : raw;
           deep++;
-          const signal = evaluate(ticker.symbol, candles, ticker, this.cfg.thresholds);
+          const result = evaluateDetailed(ticker.symbol, candles, ticker, this.cfg.thresholds);
+          // Track the closest near-miss for diagnostics.
+          if (!result.signal && result.reject && (!nearMiss || result.metrics.score > nearMiss.score)) {
+            nearMiss = {
+              symbol: ticker.symbol,
+              change: result.metrics.change,
+              surge: result.metrics.surge,
+              rsi: result.metrics.rsi,
+              score: result.metrics.score,
+              reject: result.reject,
+            };
+          }
+          const signal = result.signal;
           if (signal) {
             // Fetch the live order book once — feeds buy-pressure AND risk check.
             const book = this.cfg.checkOrderBook
@@ -179,6 +206,7 @@ export class Scanner {
 
       this.stats.deepScanned = deep;
       this.stats.symbolsTracked = tickers.length;
+      this.stats.lastNearMiss = found.length ? undefined : nearMiss;
       found.sort((a, b) => b.score - a.score);
       for (const s of found) {
         this.stats.signalsTotal++;
