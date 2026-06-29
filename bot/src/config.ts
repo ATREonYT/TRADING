@@ -50,6 +50,10 @@ export interface Config {
   checkOrderBook: boolean;
   /** Minutes between "still alive" heartbeat messages. 0 = off. */
   heartbeatMinutes: number;
+  /** How long to paper-track each signal's outcome, in minutes. */
+  trackHorizonMinutes: number;
+  /** Peak gain % that counts a tracked signal as a "win". */
+  winThresholdPct: number;
   dryRun: boolean;
   thresholds: Thresholds;
 }
@@ -64,6 +68,8 @@ export function loadConfig(): Config {
     maxDeepScan: envNum("MAX_DEEP_SCAN", 40),
     checkOrderBook: envBool("CHECK_ORDER_BOOK", true),
     heartbeatMinutes: envNum("HEARTBEAT_MINUTES", 60),
+    trackHorizonMinutes: envNum("TRACK_HORIZON_MINUTES", 60),
+    winThresholdPct: envNum("WIN_THRESHOLD_PCT", 5),
     dryRun: envBool("DRY_RUN", false),
     thresholds: {
       windowMinutes: envNum("WINDOW_MINUTES", 5),

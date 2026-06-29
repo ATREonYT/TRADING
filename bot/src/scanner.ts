@@ -4,6 +4,7 @@ import { Market } from "./exchange.js";
 import { evaluate } from "./detector.js";
 import { orderBookImbalance, rsi, volumeSurge, windowChangePct } from "./indicators.js";
 import { assessRisk, type RiskResult } from "./risk.js";
+import { SignalTracker } from "./tracker.js";
 import { log } from "./logger.js";
 
 export interface ScanStats {
@@ -24,12 +25,14 @@ export interface ScanStats {
  */
 export class Scanner {
   readonly market: Market;
+  readonly tracker: SignalTracker;
   private cooldownUntil = new Map<string, number>();
   private lastTickers: TickerLite[] = [];
   stats: ScanStats;
 
   constructor(private cfg: Config, private onSignal: (s: Signal) => void) {
     this.market = new Market(cfg.exchange, cfg.quote);
+    this.tracker = new SignalTracker(cfg.trackHorizonMinutes, cfg.winThresholdPct);
     this.stats = {
       startedAt: Date.now(),
       lastScanAt: 0,
@@ -108,6 +111,10 @@ export class Scanner {
       const tickers = await this.market.fetchTickers();
       this.lastTickers = tickers;
 
+      // Update paper-trade outcomes with the fresh prices (cheap — no extra calls).
+      const priceMap = new Map(tickers.map((t) => [t.symbol, t.last]));
+      this.tracker.update(priceMap, Date.now());
+
       // Prefilter: liquid markets with positive short-term momentum, ranked by
       // 24h change as a cheap proxy, then deep-scan the top N with klines.
       const candidates = tickers
@@ -173,6 +180,7 @@ export class Scanner {
       found.sort((a, b) => b.score - a.score);
       for (const s of found) {
         this.stats.signalsTotal++;
+        this.tracker.track(s, s.at);
         this.onSignal(s);
       }
     } catch (err) {

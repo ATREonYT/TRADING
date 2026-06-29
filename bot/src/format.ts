@@ -82,6 +82,48 @@ export function formatRiskReport(r: {
   ].join("\n");
 }
 
+const sign = (n: number) => `${n >= 0 ? "+" : ""}${n}%`;
+
+export function formatPerformance(s: {
+  closed: number;
+  open: number;
+  wins: number;
+  winRate: number;
+  avgPeakPct: number;
+  avgFinalPct: number;
+  avgDrawdownPct: number;
+  best?: { symbol: string; pct: number };
+  worst?: { symbol: string; pct: number };
+}, winPct: number, horizonMin: number): string {
+  if (s.closed === 0 && s.open === 0) {
+    return "No signals tracked yet. Once the bot fires alerts, /performance will show how they played out.";
+  }
+  const lines = [
+    `📈 <b>Signal performance</b> <i>(paper-traded, ${horizonMin}m horizon)</i>`,
+    ``,
+    `Tracked: <b>${s.closed}</b> closed · ${s.open} open`,
+    `Win rate (peak ≥ +${winPct}%): <b>${s.winRate}%</b> (${s.wins}/${s.closed})`,
+    `Avg peak gain: <b>${sign(s.avgPeakPct)}</b>`,
+    `Avg result at ${horizonMin}m: <b>${sign(s.avgFinalPct)}</b>`,
+    `Avg max drawdown: <b>${sign(s.avgDrawdownPct)}</b>`,
+  ];
+  if (s.best) lines.push(`Best: ${esc(s.best.symbol)} ${sign(s.best.pct)}`);
+  if (s.worst) lines.push(`Worst: ${esc(s.worst.symbol)} ${sign(s.worst.pct)}`);
+  lines.push(``, `<i>Hypothetical — measures signal quality, not real trades.</i>`);
+  return lines.join("\n");
+}
+
+export function formatOpenTrades(
+  trades: Array<{ symbol: string; curPct: number; peakPct: number; ageMin: number }>,
+): string {
+  if (!trades.length) return "No open paper-trades right now.";
+  const rows = trades.map((t) => {
+    const base = t.symbol.split("/")[0] ?? t.symbol;
+    return `${t.curPct >= 0 ? "🟢" : "🔴"} <b>${esc(base)}</b>  now ${sign(t.curPct)} · peak ${sign(t.peakPct)} · ${t.ageMin}m`;
+  });
+  return `<b>Open paper-trades</b>\n` + rows.join("\n");
+}
+
 export function formatTopMovers(movers: TickerLite[]): string {
   if (!movers.length) return "No liquid movers right now.";
   const rows = movers.map((m, i) => {

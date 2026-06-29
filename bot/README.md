@@ -63,6 +63,8 @@ Run `DRY_RUN=true npm start` to log signals to the console instead of Telegram.
 | `/status` | scanner health, uptime, markets tracked, signals sent |
 | `/top` | current top 24h movers (liquid only) |
 | `/risk <symbol>` | run the scam/risk check on any coin, e.g. `/risk PEPE` |
+| `/performance` | how past signals played out (paper-traded win rate, avg peak/result) |
+| `/track` | currently open paper-trades and their live P&L |
 | `/settings` | view all thresholds |
 | `/set <key> <value>` | tune a threshold live, e.g. `/set minVolumeSurge 4` |
 | `/scan` | force a scan right now |

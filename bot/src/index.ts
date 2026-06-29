@@ -1,7 +1,13 @@
 import { loadConfig, THRESHOLD_KEYS, type Thresholds } from "./config.js";
 import { Scanner } from "./scanner.js";
 import { TelegramBot } from "./telegram.js";
-import { formatSignal, formatTopMovers, formatRiskReport } from "./format.js";
+import {
+  formatSignal,
+  formatTopMovers,
+  formatRiskReport,
+  formatPerformance,
+  formatOpenTrades,
+} from "./format.js";
 import { log } from "./logger.js";
 
 const cfg = loadConfig();
@@ -72,6 +78,8 @@ const helpText = [
   "/status – scanner health",
   "/top – current top movers",
   "/risk &lt;symbol&gt; – scam/risk check a coin (e.g. /risk PEPE)",
+  "/performance – how past signals played out",
+  "/track – open paper-trades right now",
   "/settings – view thresholds",
   "/set &lt;key&gt; &lt;value&gt; – tune a threshold",
   "/scan – force a scan now",
@@ -85,6 +93,13 @@ bot.on("help", () => helpText);
 bot.on("status", () => statusText());
 bot.on("settings", () => settingsText(cfg.thresholds));
 bot.on("top", () => formatTopMovers(scanner.topMovers(10)));
+bot.on("performance", () =>
+  formatPerformance(scanner.tracker.summary(), cfg.winThresholdPct, cfg.trackHorizonMinutes),
+);
+bot.on("stats", () =>
+  formatPerformance(scanner.tracker.summary(), cfg.winThresholdPct, cfg.trackHorizonMinutes),
+);
+bot.on("track", () => formatOpenTrades(scanner.tracker.openList(Date.now())));
 
 bot.on("risk", async (args, chatId) => {
   const input = args[0];
