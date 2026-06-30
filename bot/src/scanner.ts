@@ -46,7 +46,7 @@ export class Scanner {
 
   constructor(private cfg: Config, private onSignal: (s: Signal) => void, market?: Market) {
     this.market = market ?? new Market(cfg.exchange, cfg.quote, cfg.marketType);
-    this.tracker = new SignalTracker(cfg.trackHorizonMinutes, cfg.winThresholdPct);
+    this.tracker = new SignalTracker(cfg.trackHorizonMinutes, cfg.winThresholdPct, cfg.trackStopPct);
     this.stats = {
       startedAt: Date.now(),
       lastScanAt: 0,

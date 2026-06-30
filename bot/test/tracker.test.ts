@@ -46,6 +46,30 @@ test("a signal that never reaches the win threshold is not a win", () => {
   assert.equal(s.winRate, 0);
 });
 
+test("unbiased: stop hit before target = loss, even if price later recovers", () => {
+  const t = new SignalTracker(30, 5, 5); // +5% target, -5% stop
+  const t0 = 9_000_000;
+  t.track(signal("BIAS/USDT", 100, t0), t0);
+  t.update(new Map([["BIAS/USDT", 94]]), t0 + 2 * 60_000); // -6% → stop → loss locked
+  t.update(new Map([["BIAS/USDT", 130]]), t0 + 5 * 60_000); // big recovery (ignored)
+  t.update(new Map([["BIAS/USDT", 130]]), t0 + 31 * 60_000); // close
+  const s = t.summary();
+  assert.equal(s.wins, 0, "a stop-out must not count as a win despite the later spike");
+  assert.equal(s.losses, 1);
+  assert.equal(s.winRate, 0);
+});
+
+test("flat: never reaches target or stop within horizon", () => {
+  const t = new SignalTracker(10, 5, 5);
+  const t0 = 10_000_000;
+  t.track(signal("FLAT/USDT", 100, t0), t0);
+  t.update(new Map([["FLAT/USDT", 102]]), t0 + 5 * 60_000); // +2% only
+  t.update(new Map([["FLAT/USDT", 102]]), t0 + 11 * 60_000); // close
+  const s = t.summary();
+  assert.equal(s.flats, 1);
+  assert.equal(s.wins, 0);
+});
+
 test("a short (down) trade wins when price falls", () => {
   const t = new SignalTracker(10, 5); // +5% favourable = win
   const t0 = 5_000_000;

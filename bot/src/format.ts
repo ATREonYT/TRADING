@@ -91,28 +91,36 @@ export function formatPerformance(s: {
   closed: number;
   open: number;
   wins: number;
+  losses: number;
+  flats: number;
   winRate: number;
+  targetPct: number;
+  stopPct: number;
   avgPeakPct: number;
   avgFinalPct: number;
   avgDrawdownPct: number;
   best?: { symbol: string; pct: number };
   worst?: { symbol: string; pct: number };
-}, winPct: number, horizonMin: number): string {
+}, horizonMin: number): string {
   if (s.closed === 0 && s.open === 0) {
-    return "No signals tracked yet. Once the bot fires alerts, /performance will show how they played out.";
+    return "No signals tracked yet. Once the bot fires alerts, /performance will show how they actually played out.";
+  }
+  if (s.closed === 0) {
+    return `📈 <b>Signal performance</b>\n${s.open} trade(s) still tracking — results appear after the ${horizonMin}m horizon. Check back soon.`;
   }
   const lines = [
-    `📈 <b>Signal performance</b> <i>(paper-traded, ${horizonMin}m horizon)</i>`,
+    `📈 <b>Signal performance</b> <i>(paper-traded, real outcomes)</i>`,
     ``,
-    `Tracked: <b>${s.closed}</b> closed · ${s.open} open`,
-    `Win rate (peak ≥ +${winPct}%): <b>${s.winRate}%</b> (${s.wins}/${s.closed})`,
-    `Avg peak gain: <b>${sign(s.avgPeakPct)}</b>`,
+    `<b>Win rate: ${s.winRate}%</b> (${s.wins}/${s.closed})`,
+    `Rule: hit <b>+${s.targetPct}%</b> before <b>−${s.stopPct}%</b> within ${horizonMin}m`,
+    `✅ Wins ${s.wins} · ❌ Losses ${s.losses} · ➖ Flat ${s.flats} · ${s.open} open`,
+    ``,
     `Avg result at ${horizonMin}m: <b>${sign(s.avgFinalPct)}</b>`,
-    `Avg max drawdown: <b>${sign(s.avgDrawdownPct)}</b>`,
+    `Avg best/worst excursion: ${sign(s.avgPeakPct)} / ${sign(s.avgDrawdownPct)}`,
   ];
   if (s.best) lines.push(`Best: ${esc(s.best.symbol)} ${sign(s.best.pct)}`);
   if (s.worst) lines.push(`Worst: ${esc(s.worst.symbol)} ${sign(s.worst.pct)}`);
-  lines.push(``, `<i>Hypothetical — measures signal quality, not real trades.</i>`);
+  lines.push(``, `<i>Hypothetical, sampled — measures signal quality, not real fills.</i>`);
   return lines.join("\n");
 }
 

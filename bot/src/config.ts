@@ -60,8 +60,10 @@ export interface Config {
   heartbeatMinutes: number;
   /** How long to paper-track each signal's outcome, in minutes. */
   trackHorizonMinutes: number;
-  /** Peak gain % that counts a tracked signal as a "win". */
+  /** Favourable % target that counts a tracked signal as a "win". */
   winThresholdPct: number;
+  /** Adverse % stop — if hit before the target, the trade is a "loss". */
+  trackStopPct: number;
   dryRun: boolean;
   thresholds: Thresholds;
 }
@@ -85,6 +87,7 @@ export function loadConfig(): Config {
     heartbeatMinutes: envNum("HEARTBEAT_MINUTES", 60),
     trackHorizonMinutes: envNum("TRACK_HORIZON_MINUTES", 60),
     winThresholdPct: envNum("WIN_THRESHOLD_PCT", 5),
+    trackStopPct: envNum("TRACK_STOP_PCT", 5),
     dryRun: envBool("DRY_RUN", false),
     thresholds: {
       windowMinutes: envNum("WINDOW_MINUTES", 3),

@@ -88,7 +88,7 @@ const helpText = [
   "/status – scanner health",
   "/top – current top movers",
   "/risk &lt;symbol&gt; – scam/risk check a coin (e.g. /risk PEPE)",
-  "/performance – how past signals played out",
+  "/winrate – honest win rate of past signals",
   "/track – open paper-trades right now",
   "/settings – view thresholds",
   "/set &lt;key&gt; &lt;value&gt; – tune a threshold",
@@ -103,7 +103,7 @@ const COMMAND_MENU = [
   { command: "top", description: "Current top movers" },
   { command: "status", description: "Scanner health" },
   { command: "risk", description: "Scam/risk check a coin (e.g. /risk PEPE)" },
-  { command: "performance", description: "How past signals played out" },
+  { command: "winrate", description: "Honest win rate of past signals" },
   { command: "track", description: "Open paper-trades right now" },
   { command: "settings", description: "View detection thresholds" },
   { command: "set", description: "Tune a threshold (/set minScore 20)" },
@@ -117,12 +117,10 @@ bot.on("help", () => helpText);
 bot.on("status", () => statusText());
 bot.on("settings", () => settingsText(cfg.thresholds));
 bot.on("top", () => formatTopMovers(scanner.topMovers(10)));
-bot.on("performance", () =>
-  formatPerformance(scanner.tracker.summary(), cfg.winThresholdPct, cfg.trackHorizonMinutes),
-);
-bot.on("stats", () =>
-  formatPerformance(scanner.tracker.summary(), cfg.winThresholdPct, cfg.trackHorizonMinutes),
-);
+const perf = () => formatPerformance(scanner.tracker.summary(), cfg.trackHorizonMinutes);
+bot.on("performance", perf);
+bot.on("stats", perf);
+bot.on("winrate", perf);
 bot.on("track", () => formatOpenTrades(scanner.tracker.openList(Date.now())));
 
 bot.on("risk", async (args, chatId) => {
