@@ -172,7 +172,7 @@ export class Scanner {
           // otherwise sink volumeSurge below threshold and suppress every signal.
           const candles = raw.length > 1 ? raw.slice(0, -1) : raw;
           deep++;
-          const result = evaluateDetailed(ticker.symbol, candles, ticker, this.cfg.thresholds);
+          const result = evaluateDetailed(ticker.symbol, candles, ticker, this.cfg.thresholds, this.cfg.signalDirection);
           // Track the closest near-miss for diagnostics.
           if (!result.signal && result.reject && (!nearMiss || result.metrics.score > nearMiss.score)) {
             nearMiss = {
@@ -191,7 +191,8 @@ export class Scanner {
               ? await this.market.fetchBook(ticker.symbol, 20)
               : null;
 
-            if (book) {
+            // Order-book pressure confirmation (only meaningful for long/pump).
+            if (book && signal.direction === "up") {
               const imb = orderBookImbalance(book.bidVol, book.askVol);
               signal.buyPressure = Math.round(imb * 100) / 100;
               if (imb >= 1.2) {
@@ -203,13 +204,13 @@ export class Scanner {
                 });
                 signal.score = Math.min(100, signal.score + 6);
               } else if (imb < 0.4) {
-                // very heavy sell wall — likely fading; skip this one
+                // very heavy sell wall — likely fading; skip this long
                 continue;
               }
             }
 
             // Thorough scam/trap check before alerting.
-            const risk = assessRisk(candles, ticker, book, signal.windowChangePct);
+            const risk = assessRisk(candles, ticker, book, Math.abs(signal.windowChangePct));
             signal.riskScore = risk.score;
             signal.riskLevel = risk.level;
             signal.riskFlags = risk.flags;

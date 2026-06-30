@@ -45,6 +45,8 @@ export interface Config {
   quote: string;
   /** "spot" or "swap" (linear USDT perpetual futures). */
   marketType: "spot" | "swap";
+  /** Which signals to send: "pump" (buy), "dump" (short), or "both". */
+  signalDirection: "pump" | "dump" | "both";
   scanIntervalSec: number;
   /** Symbols deep-scanned per cycle (a rotating batch — covers ALL coins over time). */
   maxDeepScan: number;
@@ -71,6 +73,10 @@ export function loadConfig(): Config {
     exchange: envStr("EXCHANGE", "binance"),
     quote: envStr("QUOTE_CURRENCY", "USDT"),
     marketType: envStr("MARKET_TYPE", "spot").toLowerCase() === "swap" ? "swap" : "spot",
+    signalDirection: ((): "pump" | "dump" | "both" => {
+      const d = envStr("SIGNAL_DIRECTION", "pump").toLowerCase();
+      return d === "dump" || d === "both" ? d : "pump";
+    })(),
     scanIntervalSec: envNum("SCAN_INTERVAL_SEC", 15),
     maxDeepScan: envNum("MAX_DEEP_SCAN", 120),
     moversPerScan: envNum("MOVERS_PER_SCAN", 25),

@@ -16,7 +16,8 @@ const runOnce = process.argv.includes("--once");
 const bot = new TelegramBot(cfg.telegramToken, cfg.chatId);
 const scanner = new Scanner(cfg, (signal) => {
   const text = formatSignal(signal, cfg.exchange, cfg.marketType);
-  const tradeLabel = `${cfg.exchange.toUpperCase()} ${cfg.marketType === "swap" ? "Swap" : "Spot"} ↗`;
+  const action = signal.direction === "down" ? "Short" : cfg.marketType === "swap" ? "Long" : "Buy";
+  const tradeLabel = `${action} on ${cfg.exchange.toUpperCase()} ↗`;
   const buttons = [
     [
       { text: tradeLabel, url: scanner.market.tradeUrl(signal.symbol) },

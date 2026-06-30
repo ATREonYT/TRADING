@@ -99,6 +99,25 @@ export function isBreakout(candles: Candle[], lookback = 30): boolean {
   return latest > priorHigh;
 }
 
+/** Count of consecutive bearish (close < open) candles ending at the latest. */
+export function consecutiveDown(candles: Candle[]): number {
+  let n = 0;
+  for (let i = candles.length - 1; i >= 0; i--) {
+    if (candles[i]!.close < candles[i]!.open) n++;
+    else break;
+  }
+  return n;
+}
+
+/** Breakdown: latest close below the lowest low of the prior `lookback` candles. */
+export function isBreakdown(candles: Candle[], lookback = 30): boolean {
+  if (candles.length < lookback + 1) return false;
+  const latest = candles[candles.length - 1]!.close;
+  const prior = candles.slice(candles.length - 1 - lookback, candles.length - 1);
+  const priorLow = Math.min(...prior.map((c) => c.low));
+  return latest < priorLow;
+}
+
 /** Wilder's RSI over `period` candles. Returns 50 when insufficient data. */
 export function rsi(candles: Candle[], period = 14): number {
   if (candles.length < period + 1) return 50;

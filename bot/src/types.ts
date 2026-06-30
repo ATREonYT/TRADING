@@ -32,6 +32,8 @@ export interface SignalReason {
 export interface Signal {
   symbol: string;
   price: number;
+  /** "up" = pump (buy/long), "down" = dump (sell/short) */
+  direction: "up" | "down";
   /** 0-100 composite strength */
   score: number;
   /** short-window price change % used for the trigger */

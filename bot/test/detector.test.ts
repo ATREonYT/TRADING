@@ -60,6 +60,30 @@ test("fires on a clear pump (price + volume + breakout)", () => {
   assert.ok(codes.includes("momentum") && codes.includes("volume"));
 });
 
+test("detects a dump (down move) in dump mode", () => {
+  // mirror of the pump builder but downward
+  const c: Candle[] = [];
+  for (let i = 0; i < 50; i++) {
+    const close = i % 2 === 0 ? 100 : 100.3;
+    const open = i % 2 === 0 ? 100.3 : 100;
+    c.push({ t: i, open, close, high: Math.max(open, close) + 0.1, low: Math.min(open, close) - 0.1, volume: 100 });
+  }
+  let price = 100;
+  for (let i = 0; i < 5; i++) {
+    const open = price;
+    const close = price * 0.975; // -2.5% per candle
+    c.push({ t: 50 + i, open, close, high: open + 0.05, low: close - 0.05, volume: i === 4 ? 1500 : 140 });
+    price = close;
+  }
+  // pump-only mode should NOT fire on a dump
+  assert.equal(evaluate("DUMP/USDT", c, ticker(), T, "pump"), null);
+  // dump mode should fire, with a negative change and down direction
+  const sig = evaluate("DUMP/USDT", c, ticker(), { ...T, maxRsi: 100 }, "dump");
+  assert.ok(sig, "expected a dump signal");
+  assert.equal(sig!.direction, "down");
+  assert.ok(sig!.windowChangePct < 0, `change ${sig!.windowChangePct} should be negative`);
+});
+
 test("rejects illiquid markets below minQuoteVolume", () => {
   const candles = buildSeries(2.5, 1500);
   const sig = evaluate("MICRO/USDT", candles, ticker({ quoteVolume: 50_000 }), T);

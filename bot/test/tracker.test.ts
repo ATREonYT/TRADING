@@ -5,7 +5,7 @@ import { SignalTracker } from "../src/tracker.js";
 
 function signal(symbol: string, price: number, at: number): Signal {
   return {
-    symbol, price, score: 70, windowChangePct: 5, windowSec: 180, volumeSurge: 4, change24h: 10,
+    symbol, price, direction: "up", score: 70, windowChangePct: 5, windowSec: 180, volumeSurge: 4, change24h: 10,
     quoteVolume: 1_000_000, rsi: 65, consecutiveUp: 3, brokeOut: true, volAccel: 2,
     riskScore: 20, riskLevel: "low", riskFlags: [], reasons: [], at,
   };
@@ -44,6 +44,21 @@ test("a signal that never reaches the win threshold is not a win", () => {
   assert.equal(s.closed, 1);
   assert.equal(s.wins, 0);
   assert.equal(s.winRate, 0);
+});
+
+test("a short (down) trade wins when price falls", () => {
+  const t = new SignalTracker(10, 5); // +5% favourable = win
+  const t0 = 5_000_000;
+  const short = { ...signal("DOWN/USDT", 100, t0), direction: "down" as const };
+  t.track(short, t0);
+  // price drops to 90 (favourable +10% for a short)
+  t.update(new Map([["DOWN/USDT", 90]]), t0 + 5 * 60_000);
+  t.update(new Map([["DOWN/USDT", 92]]), t0 + 11 * 60_000); // closes
+  const s = t.summary();
+  assert.equal(s.closed, 1);
+  assert.equal(s.wins, 1);
+  assert.equal(s.avgPeakPct, 10); // fell 10% at best
+  assert.equal(s.avgFinalPct, 8); // ended 8% down
 });
 
 test("does not double-track the same open symbol", () => {

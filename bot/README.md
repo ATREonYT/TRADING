@@ -82,6 +82,11 @@ adjustable at runtime via `/set`. Exchange can be any
 futures page and show `(swap)`. Run a second instance with `MARKET_TYPE=spot` if you want
 both at once.
 
+**Pumps and/or dumps:** set `SIGNAL_DIRECTION=both` to also get **dump/short** alerts
+(red ▼, `#dump`, "Short" button) alongside pumps — useful on futures where you can short.
+Use `dump` for shorts only, `pump` (default) for longs only. Dump scoring penalises
+already-oversold (crashed) names just as pump scoring penalises overbought ones.
+
 ### Network note
 
 Market data is fetched from the exchange's public REST API (e.g. `api.binance.com`). If you

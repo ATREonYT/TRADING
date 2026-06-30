@@ -1,13 +1,18 @@
 import type { Candle, Signal, SignalReason, TickerLite } from "./types.js";
 import type { Thresholds } from "./config.js";
 import {
+  consecutiveDown,
   consecutiveUp,
+  isBreakdown,
   isBreakout,
   rsi,
   volumeAcceleration,
   volumeSurgeWindow,
   windowChangePct,
 } from "./indicators.js";
+
+export type Direction = "up" | "down";
+export type DirectionMode = "pump" | "dump" | "both";
 
 /** Linear 0..1 ramp of `x` between `min` and `max`. */
 function ramp(x: number, min: number, max: number): number {
@@ -36,6 +41,7 @@ export function evaluateDetailed(
   candles: Candle[],
   ticker: TickerLite,
   t: Thresholds,
+  mode: DirectionMode = "pump",
 ): EvalResult {
   if (candles.length < t.windowMinutes + 2) {
     return { signal: null, metrics: NO_METRICS, reject: "insufficient candle history" };
@@ -51,76 +57,84 @@ export function evaluateDetailed(
   const price = candles[candles.length - 1]!.close;
   const r = rsi(candles, 14);
   const conUp = consecutiveUp(candles);
-  const brokeOut = isBreakout(candles, 30);
+  const conDown = consecutiveDown(candles);
+  const brokeUp = isBreakout(candles, 30);
+  const brokeDown = isBreakdown(candles, 30);
   const volAccel = volumeAcceleration(candles);
-  const overbought = ramp(r, 60, t.maxRsi);
+  const dirs: Direction[] = mode === "both" ? ["up", "down"] : mode === "dump" ? ["down"] : ["up"];
 
-  // Candidate windows (minutes). We evaluate each timeframe against its OWN
-  // volume so quick spikes and slower grinds both qualify, then pick the best.
   const WINDOWS = [1, 2, 3, 5, 10, 15, 30, 60].filter((w) => candles.length >= w + 1);
 
-  let best: { change: number; surge: number; win: number; score: number } | null = null;
-  // Track the closest miss (highest score that failed) for diagnostics.
-  let miss: { change: number; surge: number; win: number; score: number } | null = null;
+  type Cand = { changeSigned: number; mag: number; surge: number; win: number; score: number; dir: Direction };
+  let best: Cand | null = null;
+  let miss: Cand | null = null;
 
   for (const w of WINDOWS) {
-    const change = windowChangePct(candles, w);
-    if (change <= 0) continue;
+    const changeSigned = windowChangePct(candles, w);
     const surge = volumeSurgeWindow(candles, w);
+    for (const dir of dirs) {
+      const mag = dir === "up" ? changeSigned : -changeSigned;
+      if (mag <= 0) continue;
 
-    const sMomentum = ramp(change, t.minWindowChangePct, t.minWindowChangePct * 3);
-    const sVolume = ramp(surge, t.minVolumeSurge, t.minVolumeSurge * 3.3);
-    const sBreakout = brokeOut ? 1 : 0;
-    const sAccel = ramp(conUp, 2, 6);
-    const sVolAccel = ramp(volAccel, 1.2, 3);
-    const raw =
-      0.36 * sMomentum + 0.32 * sVolume + 0.14 * sBreakout + 0.08 * sAccel + 0.1 * sVolAccel - 0.25 * overbought;
-    const score = Math.round(Math.max(0, Math.min(1, raw)) * 100);
-    const cand = { change, surge, win: w, score };
+      const sMomentum = ramp(mag, t.minWindowChangePct, t.minWindowChangePct * 3);
+      const sVolume = ramp(surge, t.minVolumeSurge, t.minVolumeSurge * 3.3);
+      const sBreak = (dir === "up" ? brokeUp : brokeDown) ? 1 : 0;
+      const sAccel = ramp(dir === "up" ? conUp : conDown, 2, 6);
+      const sVolAccel = ramp(volAccel, 1.2, 3);
+      // up: penalise overbought (late); down: penalise oversold (already crashed)
+      const penalty = dir === "up" ? ramp(r, 60, t.maxRsi) : ramp(40 - r, 0, 40);
+      const raw =
+        0.36 * sMomentum + 0.32 * sVolume + 0.14 * sBreak + 0.08 * sAccel + 0.1 * sVolAccel - 0.25 * penalty;
+      const score = Math.round(Math.max(0, Math.min(1, raw)) * 100);
+      const cand: Cand = { changeSigned, mag, surge, win: w, score, dir };
 
-    const passes =
-      change >= t.minWindowChangePct && surge >= t.minVolumeSurge && r <= t.maxRsi && score >= t.minScore;
-    if (passes) {
-      if (!best || score > best.score) best = cand;
-    } else if (!miss || score > miss.score) {
-      miss = cand;
+      const rsiOk = dir === "up" ? r <= t.maxRsi : r >= 100 - t.maxRsi;
+      const passes = mag >= t.minWindowChangePct && surge >= t.minVolumeSurge && rsiOk && score >= t.minScore;
+      if (passes) {
+        if (!best || score > best.score) best = cand;
+      } else if (!miss || score > miss.score) {
+        miss = cand;
+      }
     }
   }
 
   if (!best) {
-    const m = miss ?? { change: 0, surge: 0, win: t.windowMinutes, score: 0 };
-    const metrics = { change: round(m.change), surge: round(m.surge), rsi: round(r), score: m.score, volAccel: round(volAccel) };
+    const m = miss ?? { changeSigned: 0, mag: 0, surge: 0, win: t.windowMinutes, score: 0, dir: "up" as Direction };
+    const metrics = { change: round(m.changeSigned), surge: round(m.surge), rsi: round(r), score: m.score, volAccel: round(volAccel) };
     let reject: string;
-    if (r > t.maxRsi) reject = `RSI ${r.toFixed(0)} > ${t.maxRsi}`;
-    else if (m.change < t.minWindowChangePct) reject = `best move +${m.change.toFixed(2)}%/${m.win}m < ${t.minWindowChangePct}%`;
+    if (m.mag < t.minWindowChangePct) reject = `best move ${m.changeSigned >= 0 ? "+" : ""}${m.changeSigned.toFixed(2)}%/${m.win}m`;
     else if (m.surge < t.minVolumeSurge) reject = `volume ${m.surge.toFixed(1)}× < ${t.minVolumeSurge}×`;
+    else if (m.dir === "up" && r > t.maxRsi) reject = `RSI ${r.toFixed(0)} > ${t.maxRsi}`;
     else reject = `score ${m.score} < ${t.minScore}`;
     return { signal: null, metrics, reject };
   }
 
-  const { change, surge, win, score } = best;
-  const metrics = { change: round(change), surge: round(surge), rsi: round(r), score, volAccel: round(volAccel) };
+  const { changeSigned, mag, surge, win, score, dir } = best;
+  const metrics = { change: round(changeSigned), surge: round(surge), rsi: round(r), score, volAccel: round(volAccel) };
+  const conN = dir === "up" ? conUp : conDown;
+  const broke = dir === "up" ? brokeUp : brokeDown;
 
   const reasons: SignalReason[] = [
-    { code: "momentum", label: `+${change.toFixed(2)}% in ${win}m`, value: round(change), threshold: t.minWindowChangePct },
+    { code: "momentum", label: `${changeSigned >= 0 ? "+" : ""}${changeSigned.toFixed(2)}% in ${win}m`, value: round(mag), threshold: t.minWindowChangePct },
     { code: "volume", label: `${surge.toFixed(1)}× volume`, value: round(surge), threshold: t.minVolumeSurge },
   ];
-  if (brokeOut) reasons.push({ code: "breakout", label: "new 30m high", value: 1, threshold: 1 });
-  if (conUp >= 3) reasons.push({ code: "acceleration", label: `${conUp} green candles`, value: conUp, threshold: 3 });
+  if (broke) reasons.push({ code: "breakout", label: dir === "up" ? "new 30m high" : "new 30m low", value: 1, threshold: 1 });
+  if (conN >= 3) reasons.push({ code: "acceleration", label: `${conN} ${dir === "up" ? "green" : "red"} candles`, value: conN, threshold: 3 });
   if (volAccel >= 1.5) reasons.push({ code: "vol-accel", label: `volume accelerating ${volAccel.toFixed(1)}×`, value: round(volAccel), threshold: 1.5 });
 
   const signal: Signal = {
     symbol,
     price,
+    direction: dir,
     score,
-    windowChangePct: round(change),
+    windowChangePct: round(changeSigned),
     windowSec: win * 60,
     volumeSurge: round(surge),
     change24h: round(ticker.percentage),
     quoteVolume: Math.round(ticker.quoteVolume),
     rsi: round(r),
-    consecutiveUp: conUp,
-    brokeOut,
+    consecutiveUp: conN,
+    brokeOut: broke,
     volAccel: round(volAccel),
     riskScore: 0,
     riskLevel: "low",
@@ -137,8 +151,9 @@ export function evaluate(
   candles: Candle[],
   ticker: TickerLite,
   t: Thresholds,
+  mode: DirectionMode = "pump",
 ): Signal | null {
-  return evaluateDetailed(symbol, candles, ticker, t).signal;
+  return evaluateDetailed(symbol, candles, ticker, t, mode).signal;
 }
 
 const round = (n: number) => Math.round(n * 100) / 100;

@@ -2,6 +2,7 @@ import type { Signal } from "./types.js";
 
 export interface PaperTrade {
   symbol: string;
+  direction: "up" | "down";
   entryPrice: number;
   entryAt: number;
   entryScore: number;
@@ -43,6 +44,7 @@ export class SignalTracker {
     if (this.openTrades.has(signal.symbol)) return;
     this.openTrades.set(signal.symbol, {
       symbol: signal.symbol,
+      direction: signal.direction,
       entryPrice: signal.price,
       entryAt: now,
       entryScore: signal.score,
@@ -75,8 +77,8 @@ export class SignalTracker {
     return [...this.openTrades.values()]
       .map((t) => ({
         symbol: t.symbol,
-        curPct: round2(pct(t.entryPrice, t.lastPrice)),
-        peakPct: round2(pct(t.entryPrice, t.peakPrice)),
+        curPct: round2(favFinal(t)),
+        peakPct: round2(favPeak(t)),
         ageMin: Math.floor((now - t.entryAt) / 60_000),
         entryScore: t.entryScore,
       }))
@@ -85,15 +87,16 @@ export class SignalTracker {
 
   summary(): PerfSummary {
     const h = this.history;
-    const peaks = h.map((t) => pct(t.entryPrice, t.peakPrice));
-    const finals = h.map((t) => pct(t.entryPrice, t.lastPrice));
-    const draws = h.map((t) => pct(t.entryPrice, t.troughPrice));
+    // All percentages are "in the signal's favour" (up = price rises, down = price falls).
+    const peaks = h.map(favPeak);
+    const finals = h.map(favFinal);
+    const draws = h.map(drawdown);
     const wins = peaks.filter((p) => p >= this.winPct).length;
 
     let best: PerfSummary["best"];
     let worst: PerfSummary["worst"];
     h.forEach((t) => {
-      const fp = pct(t.entryPrice, t.lastPrice);
+      const fp = favFinal(t);
       if (!best || fp > best.pct) best = { symbol: t.symbol, pct: round2(fp) };
       if (!worst || fp < worst.pct) worst = { symbol: t.symbol, pct: round2(fp) };
     });
@@ -111,6 +114,14 @@ export class SignalTracker {
     };
   }
 }
+
+// Favourable / adverse moves relative to the trade's direction.
+const favPeak = (t: PaperTrade) =>
+  t.direction === "up" ? pct(t.entryPrice, t.peakPrice) : -pct(t.entryPrice, t.troughPrice);
+const favFinal = (t: PaperTrade) =>
+  t.direction === "up" ? pct(t.entryPrice, t.lastPrice) : -pct(t.entryPrice, t.lastPrice);
+const drawdown = (t: PaperTrade) =>
+  t.direction === "up" ? pct(t.entryPrice, t.troughPrice) : -pct(t.entryPrice, t.peakPrice);
 
 const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 const round2 = (n: number) => Math.round(n * 100) / 100;
