@@ -98,17 +98,46 @@ export interface FetchResult {
   failed: string[];
 }
 
-/** Fetch every feed concurrently; never throws — collects failures instead. */
+/** Map with a bounded number of in-flight requests so we never open 60+ sockets at once. */
+async function pooled<I, O>(items: I[], limit: number, fn: (i: I) => Promise<O>): Promise<(O | Error)[]> {
+  const out: (O | Error)[] = new Array(items.length);
+  let idx = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (idx < items.length) {
+      const cur = idx++;
+      try {
+        out[cur] = await fn(items[cur]);
+      } catch (e) {
+        out[cur] = e as Error;
+      }
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+// Short-lived in-memory cache: with dozens of feeds and ~20s client polling,
+// this collapses bursts (and multiple viewers) into one fetch cycle.
+let cache: { at: number; result: FetchResult } | null = null;
+const CACHE_MS = 15000;
+
+/** Fetch every feed with bounded concurrency; never throws — collects failures. */
 export async function fetchAllFeeds(
   feeds: FeedSource[],
   timeoutMs = 8000,
+  concurrency = 12,
 ): Promise<FetchResult> {
-  const settled = await Promise.allSettled(feeds.map((f) => fetchOne(f, timeoutMs)));
+  if (cache && Date.now() - cache.at < CACHE_MS) return cache.result;
+
+  const settled = await pooled(feeds, concurrency, (f) => fetchOne(f, timeoutMs));
   const articles: RawArticle[] = [];
   const failed: string[] = [];
   settled.forEach((r, i) => {
-    if (r.status === "fulfilled") articles.push(...r.value);
+    if (Array.isArray(r)) articles.push(...r);
     else failed.push(feeds[i].name);
   });
-  return { articles, failed };
+  const result = { articles, failed };
+  // Only cache a materially successful cycle so transient full failures retry.
+  if (articles.length > 0) cache = { at: Date.now(), result };
+  return result;
 }
