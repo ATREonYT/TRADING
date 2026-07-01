@@ -1,4 +1,6 @@
 import { Reveal } from "./Reveal";
+import { Spotlight } from "./Spotlight";
+import { SectionHeading } from "./SectionHeading";
 import { Zap, Newspaper, Candles, Bell, Radar, Layers } from "@/components/icons";
 
 const FEATURES = [
@@ -43,26 +45,22 @@ const FEATURES = [
 export function Features() {
   return (
     <section id="features" className="mx-auto max-w-[1200px] px-4 py-20 lg:px-6">
-      <Reveal className="mx-auto max-w-2xl text-center">
-        <span className="text-2xs font-semibold uppercase tracking-widest text-primary">What it does</span>
-        <h2 className="mt-2 text-3xl font-bold tracking-tight text-ink sm:text-4xl">
-          A trading terminal that reads the news for you
-        </h2>
-        <p className="mt-3 text-muted">
-          Not just a feed — an engine that understands what actually causes price changes and puts it in front of you first.
-        </p>
-      </Reveal>
+      <SectionHeading
+        eyebrow="What it does"
+        title="A trading terminal that reads the news for you"
+        subtitle="Not just a feed — an engine that understands what actually causes price changes and puts it in front of you first."
+      />
 
       <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {FEATURES.map((f, i) => (
           <Reveal key={f.title} delay={i * 70}>
-            <div className="card-hover group h-full rounded-2xl border border-border bg-surface/70 p-6">
+            <Spotlight className="glossy card-hover group h-full rounded-2xl p-6">
               <span className={`mb-4 grid h-11 w-11 place-items-center rounded-xl bg-elevated ring-1 ring-border ${f.tint}`}>
                 <f.icon size={20} />
               </span>
               <h3 className="text-base font-semibold text-ink">{f.title}</h3>
               <p className="mt-2 text-sm leading-relaxed text-muted">{f.body}</p>
-            </div>
+            </Spotlight>
           </Reveal>
         ))}
       </div>

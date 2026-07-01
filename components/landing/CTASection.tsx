@@ -1,12 +1,14 @@
 import { Reveal } from "./Reveal";
+import { Aurora } from "./Aurora";
 import { Radar, ArrowUp } from "@/components/icons";
 
 export function CTASection() {
   return (
     <section className="mx-auto max-w-[1200px] px-4 py-20 lg:px-6">
       <Reveal>
-        <div className="relative overflow-hidden rounded-3xl border border-border bg-gradient-to-br from-surface to-elevated p-10 text-center sm:p-16">
+        <div className="glossy relative overflow-hidden rounded-3xl p-10 text-center sm:p-16">
           <div className="hero-mesh absolute inset-0 -z-10 animate-gradient-pan opacity-70" />
+          <Aurora className="-z-10 opacity-70" />
           <div className="grid-overlay absolute inset-0 -z-10 opacity-40" />
 
           <h2 className="mx-auto max-w-2xl text-3xl font-bold tracking-tight text-ink sm:text-4xl">

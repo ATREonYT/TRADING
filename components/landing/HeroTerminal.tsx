@@ -27,7 +27,7 @@ export function HeroTerminal() {
       {/* glow */}
       <div className="absolute -inset-6 -z-10 rounded-[2rem] bg-primary/20 blur-3xl animate-glow-breathe" />
 
-      <div className="glass overflow-hidden rounded-2xl shadow-card">
+      <div className="glossy overflow-hidden rounded-2xl">
         {/* window chrome */}
         <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
           <span className="h-2.5 w-2.5 rounded-full bg-down/80" />

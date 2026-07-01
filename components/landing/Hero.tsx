@@ -1,12 +1,15 @@
 import { HeroTerminal } from "./HeroTerminal";
+import { Aurora } from "./Aurora";
 import { Radar, Newspaper, ArrowUp } from "@/components/icons";
 
 export function Hero() {
   return (
     <section id="top" className="relative overflow-hidden">
       {/* animated backdrops */}
-      <div className="hero-mesh absolute inset-0 -z-20 animate-gradient-pan" />
-      <div className="grid-overlay absolute inset-0 -z-10 opacity-60" />
+      <div className="hero-mesh absolute inset-0 -z-30 animate-gradient-pan" />
+      <Aurora className="-z-20" />
+      <div className="grid-overlay absolute inset-0 -z-10 opacity-50" />
+      <div className="noise absolute inset-0 -z-10" />
 
       <div className="mx-auto grid max-w-[1200px] items-center gap-12 px-4 pb-16 pt-12 lg:grid-cols-[1.05fr_1fr] lg:px-6 lg:pb-24 lg:pt-20">
         {/* copy */}

@@ -8,6 +8,7 @@ const LINKS = [
   { label: "Catalysts", href: "#catalysts" },
   { label: "How it works", href: "#how" },
   { label: "Markets", href: "#markets" },
+  { label: "FAQ", href: "#faq" },
 ];
 
 export function LandingNav() {
