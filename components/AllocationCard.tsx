@@ -22,8 +22,8 @@ function AllocTooltip({ active, payload }: any) {
 
 export function AllocationCard() {
   return (
-    <section className="rounded-xl border border-border bg-surface shadow-card" aria-label="Portfolio allocation">
-      <div className="border-b border-border px-4 py-3">
+    <section className="glossy rounded-2xl" aria-label="Portfolio allocation">
+      <div className="border-b border-border/60 px-4 py-3">
         <h2 className="text-sm font-semibold text-ink">Allocation</h2>
         <p className="text-2xs text-faint">By market value</p>
       </div>

@@ -15,9 +15,9 @@ export function Watchlist({
   return (
     <aside
       aria-label="Watchlist"
-      className="flex h-full flex-col rounded-xl border border-border bg-surface shadow-card"
+      className="glossy flex h-full flex-col rounded-2xl"
     >
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+      <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
         <h2 className="text-sm font-semibold text-ink">Watchlist</h2>
         <span className="flex items-center gap-1.5 text-2xs text-muted">
           <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-up" />
@@ -34,7 +34,7 @@ export function Watchlist({
                 role="option"
                 aria-selected={active}
                 onClick={() => onSelect(s.ticker)}
-                className={`group flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors ${
+                className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors ${
                   active ? "bg-elevated ring-1 ring-primary/40" : "hover:bg-elevated/60"
                 }`}
               >

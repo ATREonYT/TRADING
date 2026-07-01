@@ -1,6 +1,7 @@
 import { Reveal } from "./Reveal";
 import { HEATMAP } from "@/lib/landingData";
 import { pct } from "@/lib/format";
+import { radarLink } from "@/lib/radar/symbolLink";
 
 // Color a tile by its move — green for gainers, red for losers, intensity by size.
 function tileColor(changePct: number): string {
@@ -36,8 +37,9 @@ export function MarketHeatmap() {
           {HEATMAP.map((t) => {
             const up = t.changePct >= 0;
             return (
-              <div
+              <a
                 key={t.symbol}
+                href={radarLink(t.symbol)}
                 className={`card-hover flex flex-col justify-center rounded-lg border border-border/40 p-2 ${SPAN[t.weight]}`}
                 style={{ backgroundColor: tileColor(t.changePct) }}
               >
@@ -45,7 +47,7 @@ export function MarketHeatmap() {
                 <span className={`tnum font-mono text-2xs font-semibold ${up ? "text-up" : "text-down"}`}>
                   {pct(t.changePct)}
                 </span>
-              </div>
+              </a>
             );
           })}
         </div>

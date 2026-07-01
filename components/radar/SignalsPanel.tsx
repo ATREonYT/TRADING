@@ -9,23 +9,25 @@ import { leanBg, sentimentColor } from "./helpers";
 
 type Filter = "all" | "buy" | "watch" | "equity" | "crypto";
 
-export function SignalsPanel({ signals }: { signals: Signal[] }) {
+export function SignalsPanel({ signals, focus = "" }: { signals: Signal[]; focus?: string }) {
   const [filter, setFilter] = useState<Filter>("all");
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(focus ? focus.toUpperCase() : null);
 
   const rows = useMemo(() => {
+    const f = focus.trim().toUpperCase();
     return signals.filter((s) => {
+      if (f && !s.symbol.toUpperCase().includes(f)) return false;
       if (filter === "buy") return s.lean === "buy";
       if (filter === "watch") return s.lean === "watch";
       if (filter === "equity") return s.kind === "equity";
       if (filter === "crypto") return s.kind === "crypto";
       return true;
     });
-  }, [signals, filter]);
+  }, [signals, filter, focus]);
 
   return (
-    <section className="flex min-h-0 flex-col rounded-xl border border-border bg-surface shadow-card">
-      <header className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+    <section className="glossy flex min-h-0 flex-col rounded-2xl">
+      <header className="flex flex-wrap items-center gap-2 border-b border-border/60 px-4 py-3">
         <Zap size={16} className="text-accent" />
         <h2 className="text-sm font-semibold text-ink">Market Scanner · Ideas</h2>
         <div className="ml-auto flex items-center gap-1">

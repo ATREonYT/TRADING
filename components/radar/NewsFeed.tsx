@@ -10,14 +10,16 @@ const SENTIMENTS: (Sentiment | "all")[] = ["all", "bullish", "bearish"];
 export function NewsFeed({
   items,
   freshIds,
+  initialQuery = "",
 }: {
   items: NewsItem[];
   freshIds: Set<string>;
+  initialQuery?: string;
 }) {
   const [cat, setCat] = useState<string>("all");
   const [sent, setSent] = useState<string>("all");
   const [catalystOnly, setCatalystOnly] = useState(false);
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(initialQuery);
   const [openWhy, setOpenWhy] = useState<Set<string>>(new Set());
 
   const toggleWhy = (id: string) =>
@@ -40,8 +42,8 @@ export function NewsFeed({
   }, [items, cat, sent, catalystOnly, q]);
 
   return (
-    <section className="flex min-h-0 flex-col rounded-xl border border-border bg-surface shadow-card">
-      <header className="flex items-center gap-2 border-b border-border px-4 py-3">
+    <section className="glossy flex min-h-0 flex-col rounded-2xl">
+      <header className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
         <Newspaper size={16} className="text-primary" />
         <h2 className="text-sm font-semibold text-ink">News & Catalyst Analysis</h2>
         <span className="ml-auto rounded-full bg-elevated px-2 py-0.5 text-2xs tabular-nums text-muted">

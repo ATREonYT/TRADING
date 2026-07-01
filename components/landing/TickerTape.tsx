@@ -1,5 +1,6 @@
 import { TAPE } from "@/lib/landingData";
 import { num, pct } from "@/lib/format";
+import { radarLink } from "@/lib/radar/symbolLink";
 
 // Infinite scrolling price tape — the signature "live market" texture. The row
 // is duplicated so the -50% marquee translate loops seamlessly.
@@ -11,13 +12,17 @@ export function TickerTape({ className = "" }: { className?: string }) {
         {row.map((t, i) => {
           const up = t.changePct >= 0;
           return (
-            <span key={i} className="mx-4 inline-flex items-center gap-2 font-mono text-xs">
+            <a
+              key={i}
+              href={radarLink(t.symbol)}
+              className="mx-4 inline-flex items-center gap-2 font-mono text-xs transition-opacity hover:opacity-80"
+            >
               <span className="font-semibold text-ink">{t.symbol}</span>
               <span className="tnum text-muted">{num(t.price)}</span>
               <span className={`tnum ${up ? "text-up" : "text-down"}`}>
                 {up ? "▲" : "▼"} {pct(t.changePct)}
               </span>
-            </span>
+            </a>
           );
         })}
       </div>

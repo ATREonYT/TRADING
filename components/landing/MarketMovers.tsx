@@ -5,6 +5,7 @@ import type { Quote, RadarPayload } from "@/lib/radar/types";
 import { Sparkline } from "@/components/Sparkline";
 import { usd, pct } from "@/lib/format";
 import { ArrowUp, ArrowDown } from "@/components/icons";
+import { radarLink } from "@/lib/radar/symbolLink";
 
 // Live top gainers / losers pulled from the markets API.
 export function MarketMovers() {
@@ -51,13 +52,18 @@ function Column({ title, up, quotes, loading }: { title: string; up: boolean; qu
           ))}
         {!loading &&
           quotes.map((q) => (
-            <li key={q.symbol} className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-elevated/40">
-              <span className="w-16 shrink-0 font-mono text-xs font-semibold text-ink">{q.symbol}</span>
-              <Sparkline data={q.spark ?? []} up={up} width={48} height={18} />
-              <span className="ml-auto tnum font-mono text-2xs text-muted">{usd(q.price)}</span>
-              <span className={`tnum w-16 shrink-0 text-right font-mono text-2xs font-semibold ${up ? "text-up" : "text-down"}`}>
-                {pct(q.changePct)}
-              </span>
+            <li key={q.symbol}>
+              <a
+                href={radarLink(q.symbol)}
+                className="flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-elevated/40"
+              >
+                <span className="w-16 shrink-0 font-mono text-xs font-semibold text-ink">{q.symbol}</span>
+                <Sparkline data={q.spark ?? []} up={up} width={48} height={18} />
+                <span className="ml-auto tnum font-mono text-2xs text-muted">{usd(q.price)}</span>
+                <span className={`tnum w-16 shrink-0 text-right font-mono text-2xs font-semibold ${up ? "text-up" : "text-down"}`}>
+                  {pct(q.changePct)}
+                </span>
+              </a>
             </li>
           ))}
         {!loading && quotes.length === 0 && (

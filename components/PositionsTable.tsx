@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { POSITIONS, positionMetrics, type Position } from "@/lib/mockData";
 import { usd, num, signedUsd, compactUsd } from "@/lib/format";
-import { Sort } from "./icons";
+import { Sort, External } from "./icons";
+import { radarLink } from "@/lib/radar/symbolLink";
 
 type Row = Position & {
   marketValue: number;
@@ -26,9 +27,19 @@ type Col = {
 
 const columns: Col[] = [
   { key: "ticker", label: "Symbol", align: "left", render: (r) => (
-    <div>
-      <div className="font-mono font-semibold text-ink">{r.ticker}</div>
-      <div className="text-2xs text-faint">{r.name}</div>
+    <div className="flex items-center gap-2">
+      <div>
+        <div className="font-mono font-semibold text-ink">{r.ticker}</div>
+        <div className="text-2xs text-faint">{r.name}</div>
+      </div>
+      <a
+        href={radarLink(r.ticker)}
+        onClick={(e) => e.stopPropagation()}
+        title={`Open ${r.ticker} in Radar`}
+        className="opacity-0 transition-opacity group-hover:opacity-100 hover:text-primary text-faint"
+      >
+        <External size={13} />
+      </a>
     </div>
   )},
   { key: "qty", label: "Qty", align: "right", numeric: true, render: (r) => <span className="tnum">{r.qty}</span> },
@@ -46,7 +57,13 @@ const columns: Col[] = [
   )},
 ];
 
-export function PositionsTable() {
+export function PositionsTable({
+  onSelect,
+  selected,
+}: {
+  onSelect?: (ticker: string) => void;
+  selected?: string;
+}) {
   const [sortKey, setSortKey] = useState<keyof Row>("marketValue");
   const [dir, setDir] = useState<"asc" | "desc">("desc");
 
@@ -70,10 +87,10 @@ export function PositionsTable() {
   );
 
   return (
-    <section className="rounded-xl border border-border bg-surface shadow-card" aria-label="Open positions">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+    <section className="glossy rounded-2xl" aria-label="Open positions">
+      <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
         <h2 className="text-sm font-semibold text-ink">Open Positions</h2>
-        <span className="text-2xs text-faint">{rows.length} holdings</span>
+        <span className="text-2xs text-faint">{rows.length} holdings · click a row to chart</span>
       </div>
       <div className="scroll-thin overflow-x-auto">
         <table className="w-full min-w-[680px] border-collapse text-sm">
@@ -103,15 +120,24 @@ export function PositionsTable() {
             </tr>
           </thead>
           <tbody>
-            {sorted.map((r) => (
-              <tr key={r.ticker} className="border-b border-border/60 transition-colors hover:bg-elevated/40">
-                {columns.map((c) => (
-                  <td key={String(c.key)} className={`px-4 py-3 ${c.align === "right" ? "text-right" : "text-left"}`}>
-                    {c.render(r)}
-                  </td>
-                ))}
-              </tr>
-            ))}
+            {sorted.map((r) => {
+              const active = selected === r.ticker;
+              return (
+                <tr
+                  key={r.ticker}
+                  onClick={() => onSelect?.(r.ticker)}
+                  className={`group border-b border-border/60 transition-colors ${
+                    onSelect ? "cursor-pointer" : ""
+                  } ${active ? "bg-primary/10" : "hover:bg-elevated/40"}`}
+                >
+                  {columns.map((c) => (
+                    <td key={String(c.key)} className={`px-4 py-3 ${c.align === "right" ? "text-right" : "text-left"}`}>
+                      {c.render(r)}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
           </tbody>
           <tfoot>
             <tr className="text-sm font-medium">

@@ -5,8 +5,8 @@ const maxAbs = Math.max(...SECTOR_PNL.map((s) => Math.abs(s.pnl)), 1);
 
 export function SectorPnLCard() {
   return (
-    <section className="rounded-xl border border-border bg-surface shadow-card" aria-label="Open P&L by sector">
-      <div className="border-b border-border px-4 py-3">
+    <section className="glossy rounded-2xl" aria-label="Open P&L by sector">
+      <div className="border-b border-border/60 px-4 py-3">
         <h2 className="text-sm font-semibold text-ink">Open P&L by Sector</h2>
         <p className="text-2xs text-faint">Unrealized, current positions</p>
       </div>

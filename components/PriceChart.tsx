@@ -5,6 +5,8 @@ import { createChart, ColorType, type IChartApi } from "lightweight-charts";
 import { candlesFor, SYMBOLS } from "@/lib/mockData";
 import { num, pct } from "@/lib/format";
 import { Delta } from "./Delta";
+import { Radar } from "./icons";
+import { radarLink } from "@/lib/radar/symbolLink";
 
 const TIMEFRAMES = ["1D", "1W", "1M", "3M", "6M", "1Y"] as const;
 type TF = (typeof TIMEFRAMES)[number];
@@ -98,7 +100,7 @@ export function PriceChart({ ticker }: { ticker: string }) {
   const ohlc = hover ?? (last ? { o: last.open, h: last.high, l: last.low, c: last.close } : null);
 
   return (
-    <section className="rounded-xl border border-border bg-surface shadow-card" aria-label={`${ticker} price chart`}>
+    <section className="glossy rounded-2xl" aria-label={`${ticker} price chart`}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
         <div className="flex items-baseline gap-3">
           <h2 className="font-mono text-lg font-semibold text-ink">{ticker}</h2>
@@ -107,6 +109,13 @@ export function PriceChart({ ticker }: { ticker: string }) {
           <Delta value={sym.changePct} size="md" />
         </div>
         <div className="flex items-center gap-3">
+          <a
+            href={radarLink(ticker)}
+            className="flex items-center gap-1.5 rounded-md border border-border bg-elevated/60 px-2.5 py-1.5 text-2xs font-medium text-muted transition-colors hover:border-primary/50 hover:text-ink"
+          >
+            <Radar size={13} />
+            Open in Radar
+          </a>
           {ohlc && (
             <div className="hidden items-center gap-2 font-mono text-2xs text-muted md:flex tnum" aria-live="polite">
               <span>O <span className="text-ink">{num(ohlc.o)}</span></span>

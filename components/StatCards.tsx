@@ -43,7 +43,7 @@ export function StatCards() {
       {stats.map((s, i) => (
         <div
           key={s.label}
-          className="animate-fade-up rounded-xl border border-border bg-surface p-4 shadow-card"
+          className="glossy card-hover animate-fade-up rounded-2xl p-4"
           style={{ animationDelay: `${i * 40}ms` }}
         >
           <div className="flex items-center justify-between">

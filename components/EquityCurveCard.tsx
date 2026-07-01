@@ -39,8 +39,8 @@ function CurveTooltip({ active, payload }: any) {
 
 export function EquityCurveCard() {
   return (
-    <section className="rounded-xl border border-border bg-surface shadow-card" aria-label="Equity curve">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+    <section className="glossy rounded-2xl" aria-label="Equity curve">
+      <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
         <div>
           <h2 className="text-sm font-semibold text-ink">Portfolio Value</h2>
           <p className="text-2xs text-faint">Last 120 sessions · NAV</p>

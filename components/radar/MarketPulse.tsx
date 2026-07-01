@@ -4,6 +4,7 @@ import type { Quote } from "@/lib/radar/types";
 import { Sparkline } from "@/components/Sparkline";
 import { ArrowUp, ArrowDown, Zap } from "@/components/icons";
 import { usd, pct, dirClass } from "@/lib/format";
+import { radarLink } from "@/lib/radar/symbolLink";
 
 // Horizontal strip of the biggest movers — the "scan the whole market" pulse.
 // Cards with unusual volume (a common precursor to a spike) get a flag.
@@ -12,23 +13,24 @@ export function MarketPulse({ quotes }: { quotes: Quote[] }) {
   if (movers.length === 0) return null;
 
   return (
-    <section className="rounded-xl border border-border bg-surface shadow-card">
-      <header className="flex items-center gap-2 border-b border-border px-4 py-2.5">
+    <section className="glossy rounded-2xl">
+      <header className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
         <span className="relative flex h-2 w-2">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-up/60" />
           <span className="relative inline-flex h-2 w-2 rounded-full bg-up" />
         </span>
         <h2 className="text-sm font-semibold text-ink">Market Pulse — Top Movers</h2>
-        <span className="ml-auto text-2xs text-faint">sorted by move size</span>
+        <span className="ml-auto text-2xs text-faint">tap a card to open in Radar</span>
       </header>
       <div className="scroll-thin flex gap-2 overflow-x-auto p-3">
         {movers.map((q) => {
           const up = q.changePct >= 0;
           const spike = q.volumeRatio != null && q.volumeRatio >= 180;
           return (
-            <div
+            <a
               key={q.symbol}
-              className={`w-40 shrink-0 rounded-lg border bg-base/50 p-2.5 ${
+              href={radarLink(q.symbol)}
+              className={`card-hover w-40 shrink-0 rounded-xl border bg-base/50 p-2.5 ${
                 spike ? "border-accent/50" : "border-border"
               }`}
             >
@@ -49,7 +51,7 @@ export function MarketPulse({ quotes }: { quotes: Quote[] }) {
                 </span>
                 <Sparkline data={q.spark ?? []} up={up} width={56} height={20} />
               </div>
-            </div>
+            </a>
           );
         })}
       </div>
