@@ -1,11 +1,5 @@
-import { TopNav } from "@/components/TopNav";
-import { Dashboard } from "@/components/Dashboard";
+import { Landing } from "@/components/landing/Landing";
 
 export default function Page() {
-  return (
-    <div className="min-h-dvh bg-base">
-      <TopNav />
-      <Dashboard />
-    </div>
-  );
+  return <Landing />;
 }

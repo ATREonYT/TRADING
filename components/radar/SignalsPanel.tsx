@@ -6,7 +6,6 @@ import { Sparkline } from "@/components/Sparkline";
 import { ArrowUp, ArrowDown, Zap, External } from "@/components/icons";
 import { usd, pct, dirClass } from "@/lib/format";
 import { leanBg, sentimentColor } from "./helpers";
-import { Freedom24Button } from "./Freedom24Button";
 
 type Filter = "all" | "buy" | "watch" | "equity" | "crypto";
 
@@ -113,7 +112,6 @@ export function SignalsPanel({ signals }: { signals: Signal[] }) {
                       ))}
                     </div>
                   )}
-                  <Freedom24Button symbol={s.symbol} kind={s.kind} className="w-full" />
                 </div>
               )}
             </li>

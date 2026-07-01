@@ -1,5 +1,6 @@
 import type { NewsCategory, NewsItem, Sentiment } from "./types";
 import type { RawArticle } from "./rss";
+import { detectCatalyst } from "./catalysts";
 
 // Lightweight, transparent NLP: a finance-tuned sentiment lexicon, an
 // impact/urgency scorer, and a company->ticker resolver. No black boxes — a
@@ -124,8 +125,12 @@ export function enrichArticles(
     const text = `${a.title}. ${a.summary}`;
     const symbols = extractSymbols(text);
     const sentimentScore = scoreSentiment(text);
+    const sentiment = bucket(sentimentScore);
     const ageMin = Math.max(0, (now - Date.parse(a.publishedAt)) / 60000);
-    const impact = scoreImpact(text, ageMin, symbols.length);
+    const catalyst = detectCatalyst(text, sentiment);
+    // A detected catalyst is *the* reason a price moves — let it lift impact.
+    const baseImpact = scoreImpact(text, ageMin, symbols.length);
+    const impact = Math.min(100, Math.round(catalyst ? Math.max(baseImpact, catalyst.strength * 0.75 + baseImpact * 0.35) : baseImpact));
 
     items.push({
       id: hashId(a.title + a.source),
@@ -136,10 +141,11 @@ export function enrichArticles(
       publishedAt: a.publishedAt,
       category: categorize(text, feedCategory(a.source)),
       sentimentScore,
-      sentiment: bucket(sentimentScore),
+      sentiment,
       impact,
       symbols,
-      breaking: impact >= 55 && ageMin < 90,
+      catalyst,
+      breaking: (impact >= 60 || (catalyst?.strength ?? 0) >= 82) && ageMin < 90,
     });
   }
 

@@ -21,6 +21,9 @@ export const sentimentBg = (s: Sentiment): string =>
       ? "bg-down/15 text-down ring-down/30"
       : "bg-elevated text-muted ring-border";
 
+export const directionArrow = (s: Sentiment): string =>
+  s === "bullish" ? "▲" : s === "bearish" ? "▼" : "▪";
+
 export const leanBg = (lean: "buy" | "watch" | "avoid"): string =>
   lean === "buy"
     ? "bg-up/15 text-up ring-up/40"

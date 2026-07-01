@@ -4,7 +4,6 @@ import type { Quote } from "@/lib/radar/types";
 import { Sparkline } from "@/components/Sparkline";
 import { ArrowUp, ArrowDown, Zap } from "@/components/icons";
 import { usd, pct, dirClass } from "@/lib/format";
-import { Freedom24Button } from "./Freedom24Button";
 
 // Horizontal strip of the biggest movers — the "scan the whole market" pulse.
 // Cards with unusual volume (a common precursor to a spike) get a flag.
@@ -49,9 +48,6 @@ export function MarketPulse({ quotes }: { quotes: Quote[] }) {
                   {pct(q.changePct)}
                 </span>
                 <Sparkline data={q.spark ?? []} up={up} width={56} height={20} />
-              </div>
-              <div className="mt-2">
-                <Freedom24Button symbol={q.symbol} kind={q.kind} variant="chip" className="w-full justify-center py-1" />
               </div>
             </div>
           );

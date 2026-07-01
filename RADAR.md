@@ -34,33 +34,38 @@ items flash as they arrive. A **LIVE** pill shows how fresh the data is.
 Sentiment uses a finance-tuned lexicon (`lib/radar/nlp.ts`) — no black box, so
 you can read exactly why anything scored the way it did.
 
-## Trade on Freedom24
+## Catalyst engine — what actually moves prices
 
-**Trade on Freedom24** buttons open the **exact instrument** at Freedom24 so you
-can place the order with your broker. Helix never executes orders — the buttons
-just hand off. They appear:
+Radar doesn't just score tone; it identifies the **specific event** driving a
+headline. `lib/radar/catalysts.ts` classifies each story into one of 20+
+price-moving catalyst types and explains the mechanism:
 
-- on the **main dashboard chart** (opens the exact stock you're viewing),
-- in each **signal's** detail panel,
-- on every **Market Pulse** mover card,
-- as a header CTA.
+| Catalyst | Typical direction |
+| --- | --- |
+| Earnings beat / miss | ▲ / ▼ |
+| Guidance raise / cut | ▲ / ▼ |
+| Analyst upgrade / downgrade | context |
+| M&A / deal | context |
+| Regulatory approval (FDA/EMA) | ▲ |
+| Legal / regulatory risk (lawsuit, probe, recall) | ▼ |
+| Fed / rates, inflation, jobs / GDP | context |
+| Supply / commodity shock, geopolitics | context / ▼ |
+| Buyback / dividend, product / contract win | ▲ |
+| Short squeeze, solvency risk, crypto flows | ▲ / ▼ |
 
-Links use Freedom24's real instrument path,
-`https://freedom24.com/what-to-buy/stocks/{TICKER}` — e.g. viewing NVDA links to
-`https://freedom24.com/what-to-buy/stocks/NVDA.US`. Freedom24 identifies stocks
-with a market-suffixed ticker (`.US` for US listings); crypto maps to the base
-coin and falls back to Freedom24's browse page.
+Each catalyst carries a **typical-impact strength** (0–100) that feeds the
+headline's overall impact and breaking flag. In the News feed, catalysts show as
+a coloured badge with a **"Why it moves"** expander, and a **Catalysts** filter
+isolates only headlines with a detected driver.
 
-Two optional env vars tune the links:
+## Site structure
 
-```bash
-# Override the URL pattern (e.g. to point at the logged-in terminal).
-# Use {ticker} as the placeholder.
-NEXT_PUBLIC_FREEDOM24_URL="https://freedom24.com/what-to-buy/stocks/{ticker}"
-
-# Optional partner / referral code appended to every Freedom24 link.
-NEXT_PUBLIC_FREEDOM24_REF="your-code"
-```
+- **`/`** — a premium animated landing page (hero terminal, live ticker tape,
+  feature grid, an animated "Anatomy of a catalyst" walkthrough, market heatmap,
+  a live-news strip pulling the real API, and CTAs). Scroll-reveal, gradient
+  mesh, marquee and chart-draw animations — all `prefers-reduced-motion` safe.
+- **`/dashboard`** — the Helix trading dashboard (price action, P&L, positions).
+- **`/radar`** — the live news + market scanner (below).
 
 ## Data sources (keyless, public)
 

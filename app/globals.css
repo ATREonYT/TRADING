@@ -52,6 +52,82 @@
     background: theme("colors.border");
     border-radius: 9999px;
   }
+
+  /* Premium theming for the landing / marketing surfaces */
+  .glass {
+    background: rgba(15, 22, 35, 0.6);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(148, 163, 184, 0.12);
+  }
+
+  .text-gradient {
+    background: linear-gradient(100deg, #f8fafc 0%, #93c5fd 45%, #3b82f6 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .text-gradient-green {
+    background: linear-gradient(100deg, #f8fafc 0%, #6ee7b7 50%, #26a69a 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Animated mesh backdrop for the hero */
+  .hero-mesh {
+    background:
+      radial-gradient(50% 50% at 15% 20%, rgba(59, 130, 246, 0.22) 0%, transparent 60%),
+      radial-gradient(45% 45% at 85% 15%, rgba(38, 166, 154, 0.18) 0%, transparent 60%),
+      radial-gradient(60% 60% at 75% 85%, rgba(30, 64, 175, 0.22) 0%, transparent 60%),
+      radial-gradient(40% 40% at 25% 90%, rgba(245, 158, 11, 0.1) 0%, transparent 60%);
+    background-size: 200% 200%;
+  }
+
+  /* Fine grid overlay — trading-terminal texture */
+  .grid-overlay {
+    background-image:
+      linear-gradient(rgba(35, 48, 74, 0.35) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(35, 48, 74, 0.35) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, #000 30%, transparent 100%);
+    -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, #000 30%, transparent 100%);
+  }
+
+  .shimmer-text {
+    background: linear-gradient(90deg, #64748b 0%, #f8fafc 50%, #64748b 100%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Reveal-on-scroll: hidden until .in is toggled by IntersectionObserver */
+  .reveal {
+    opacity: 0;
+    transform: translateY(28px);
+    transition:
+      opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: opacity, transform;
+  }
+  .reveal.in {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .card-hover {
+    transition:
+      transform 0.25s ease,
+      border-color 0.25s ease,
+      box-shadow 0.25s ease;
+  }
+  .card-hover:hover {
+    transform: translateY(-4px);
+    border-color: rgba(59, 130, 246, 0.4);
+    box-shadow: 0 20px 40px -20px rgba(59, 130, 246, 0.35);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -61,5 +137,9 @@
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+  }
+  .reveal {
+    opacity: 1 !important;
+    transform: none !important;
   }
 }

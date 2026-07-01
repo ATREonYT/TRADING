@@ -1,16 +1,14 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Search, Bell, Grid, Candles, Wallet, Layers, Radar } from "./icons";
+import { Search, Bell, Grid, Candles, Radar } from "./icons";
 import { compactUsd } from "@/lib/format";
 import { PORTFOLIO } from "@/lib/mockData";
 
 const NAV = [
-  { label: "Overview", icon: Grid, href: "/" },
+  { label: "Home", icon: Grid, href: "/" },
+  { label: "Dashboard", icon: Candles, href: "/dashboard" },
   { label: "Radar", icon: Radar, href: "/radar" },
-  { label: "Markets", icon: Candles, href: "/#markets" },
-  { label: "Portfolio", icon: Wallet, href: "/#portfolio" },
-  { label: "Strategies", icon: Layers, href: "/#strategies" },
 ];
 
 export function TopNav() {

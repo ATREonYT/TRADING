@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Helix — Trading Analytics",
+  title: "Helix — Trade the news before it moves the tape",
   description:
-    "Real-time trading analytics dashboard: candlestick price action, P&L, positions, and portfolio allocation.",
+    "Real-time market intelligence: world & financial news from 65+ sources, catalyst analysis that pinpoints what actually moves prices, and a full-market scanner for traders.",
 };
 
 export default function RootLayout({

@@ -2,6 +2,14 @@
 
 export type Sentiment = "bullish" | "bearish" | "neutral";
 
+export interface Catalyst {
+  type: string;
+  label: string;
+  direction: Sentiment;
+  strength: number;
+  why: string;
+}
+
 export type NewsCategory =
   | "equities"
   | "crypto"
@@ -27,6 +35,8 @@ export interface NewsItem {
   impact: number;
   /** Tickers / symbols the story is about, e.g. ["NVDA", "BTC-USD"] */
   symbols: string[];
+  /** The dominant price-moving catalyst detected in the headline, if any */
+  catalyst: Catalyst | null;
   /** True when flagged as breaking / high urgency */
   breaking: boolean;
 }

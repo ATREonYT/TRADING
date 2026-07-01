@@ -5,7 +5,6 @@ import { createChart, ColorType, type IChartApi } from "lightweight-charts";
 import { candlesFor, SYMBOLS } from "@/lib/mockData";
 import { num, pct } from "@/lib/format";
 import { Delta } from "./Delta";
-import { Freedom24Button } from "./radar/Freedom24Button";
 
 const TIMEFRAMES = ["1D", "1W", "1M", "3M", "6M", "1Y"] as const;
 type TF = (typeof TIMEFRAMES)[number];
@@ -106,7 +105,6 @@ export function PriceChart({ ticker }: { ticker: string }) {
           <span className="text-sm text-muted">{sym.name}</span>
           <span className="tnum font-mono text-lg font-semibold text-ink">{num(sym.last)}</span>
           <Delta value={sym.changePct} size="md" />
-          <Freedom24Button symbol={ticker} kind="equity" className="ml-1 self-center px-2.5 py-1 text-2xs" />
         </div>
         <div className="flex items-center gap-3">
           {ohlc && (
