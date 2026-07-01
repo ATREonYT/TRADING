@@ -7,7 +7,8 @@ import { BreakingBanner } from "./BreakingBanner";
 import { MarketPulse } from "./MarketPulse";
 import { NewsFeed } from "./NewsFeed";
 import { SignalsPanel } from "./SignalsPanel";
-import { Radar, Refresh } from "@/components/icons";
+import { Radar, Refresh, External } from "@/components/icons";
+import { FREEDOM24_HOME } from "@/lib/radar/freedom24";
 
 const NEWS_MS = 20000;
 const MARKET_MS = 30000;
@@ -35,6 +36,18 @@ export function RadarView() {
         </div>
 
         <div className="ml-auto flex items-center gap-3">
+          <a
+            href={FREEDOM24_HOME}
+            target="_blank"
+            rel="noreferrer"
+            className="hidden items-center gap-1.5 rounded-md bg-[#0FA958] px-2.5 py-1.5 text-2xs font-semibold text-white transition-opacity hover:opacity-90 sm:flex"
+          >
+            <span className="grid h-4 w-4 place-items-center rounded bg-white/15 font-mono text-[7px] font-bold leading-none">
+              F24
+            </span>
+            Trade on Freedom24
+            <External size={12} className="opacity-90" />
+          </a>
           <LivePill loading={news.loading || markets.loading} lastUpdated={lastUpdated || null} />
           <button
             onClick={() => {
@@ -107,8 +120,10 @@ function Disclaimer() {
     <p className="rounded-lg border border-border bg-surface/50 px-3 py-2 text-2xs leading-relaxed text-faint">
       <span className="font-semibold text-muted">Not financial advice.</span> Radar is an automated
       information tool. Signals are computed from public price, volume and news data using transparent
-      heuristics — they are not recommendations to buy or sell any security. Markets are risky; do your
-      own research and consider a licensed advisor before trading.
+      heuristics — they are not recommendations to buy or sell any security. &ldquo;Trade on
+      Freedom24&rdquo; buttons open the instrument at Freedom24, an independent third-party broker;
+      Helix does not execute orders. Markets are risky; do your own research and consider a licensed
+      advisor before trading.
     </p>
   );
 }

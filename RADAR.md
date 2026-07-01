@@ -34,10 +34,40 @@ items flash as they arrive. A **LIVE** pill shows how fresh the data is.
 Sentiment uses a finance-tuned lexicon (`lib/radar/nlp.ts`) — no black box, so
 you can read exactly why anything scored the way it did.
 
+## Trade on Freedom24
+
+Every signal (in its detail panel) and every mover card carries a **Trade on
+Freedom24** button that deep-links to that instrument at
+[Freedom24](https://freedom24.com), so you can go place the order with your
+broker. Helix never executes orders — the buttons just hand off to Freedom24.
+
+Freedom24 identifies instruments with a market-suffixed ticker (`AAPL.US`,
+`TSLA.US`); crypto maps to the base coin. Two optional env vars tune the links:
+
+```bash
+# Point buttons at the exact instrument page you see when logged in.
+# Use {ticker} as the placeholder (Freedom24 blocks automated URL discovery,
+# so confirm the path from your account and set it here).
+NEXT_PUBLIC_FREEDOM24_URL="https://freedom24.com/charts/{ticker}"
+
+# Optional partner / referral code appended to every Freedom24 link.
+NEXT_PUBLIC_FREEDOM24_REF="your-code"
+```
+
+If `NEXT_PUBLIC_FREEDOM24_URL` is unset, links default to Freedom24's US-stocks
+page with the ticker as a query param. Set it once to enable true per-instrument
+deep links.
+
 ## Data sources (keyless, public)
 
-- **News** — Google News topic feeds (searches the whole web) + CNBC,
-  MarketWatch, Yahoo Finance, Investing.com, CoinDesk, Cointelegraph RSS.
+- **News** — **65+ outlets**: Google News topic feeds (searches the whole web),
+  the major wires & papers (Reuters, Bloomberg, AP, Financial Times, WSJ,
+  Barron's, The Economist, Nikkei, SCMP), six CNBC desks, four MarketWatch
+  feeds, Yahoo Finance, Investing.com, Business Insider, Seeking Alpha, Forbes,
+  Fortune, Fox Business, Benzinga, TheStreet, Kiplinger, BBC, The Guardian, NYT,
+  NPR, Al Jazeera, Sky News, OilPrice, and eight crypto desks (CoinDesk,
+  Cointelegraph, Decrypt, The Block, CryptoSlate, Bitcoin Magazine, and more).
+  See `lib/radar/sources.ts`. Feeds are fetched 12-at-a-time and cached ~15s.
 - **Equities** — Yahoo Finance chart API (price history + volume).
 - **Crypto** — Binance klines (OHLCV).
 
