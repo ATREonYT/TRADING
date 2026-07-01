@@ -77,3 +77,37 @@ export const Sort = ({ className, size }: P) => (
     <path d="m8 9 4-5 4 5M16 15l-4 5-4-5" />
   </svg>
 );
+
+export const Radar = ({ className, size }: P) => (
+  <svg {...base(size)} className={className} aria-hidden="true">
+    <path d="M19.07 4.93A10 10 0 1 0 22 12" />
+    <path d="M16.24 7.76A6 6 0 1 0 18 12" />
+    <path d="M12 12 22 2" />
+    <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+export const Zap = ({ className, size }: P) => (
+  <svg {...base(size)} className={className} aria-hidden="true">
+    <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z" />
+  </svg>
+);
+
+export const Newspaper = ({ className, size }: P) => (
+  <svg {...base(size)} className={className} aria-hidden="true">
+    <path d="M4 22h16a2 2 0 0 0 2-2V4a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v16a2 2 0 0 1-2 2 2 2 0 0 1-2-2V9a1 1 0 0 1 1-1h1" />
+    <path d="M8 7h8M8 11h8M8 15h5" />
+  </svg>
+);
+
+export const External = ({ className, size }: P) => (
+  <svg {...base(size ?? 13)} className={className} aria-hidden="true">
+    <path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+  </svg>
+);
+
+export const Refresh = ({ className, size }: P) => (
+  <svg {...base(size)} className={className} aria-hidden="true">
+    <path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5" />
+  </svg>
+);

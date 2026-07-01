@@ -1,20 +1,23 @@
-import { Search, Bell, Grid, Candles, Wallet, Layers } from "./icons";
+"use client";
+
+import { usePathname } from "next/navigation";
+import { Search, Bell, Grid, Candles, Radar } from "./icons";
 import { compactUsd } from "@/lib/format";
 import { PORTFOLIO } from "@/lib/mockData";
 
 const NAV = [
-  { label: "Overview", icon: Grid, active: true },
-  { label: "Markets", icon: Candles, active: false },
-  { label: "Portfolio", icon: Wallet, active: false },
-  { label: "Strategies", icon: Layers, active: false },
+  { label: "Home", icon: Grid, href: "/" },
+  { label: "Dashboard", icon: Candles, href: "/dashboard" },
+  { label: "Radar", icon: Radar, href: "/radar" },
 ];
 
 export function TopNav() {
+  const pathname = usePathname();
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-base/80 backdrop-blur supports-[backdrop-filter]:bg-base/60">
       <div className="mx-auto flex h-14 max-w-[1600px] items-center gap-4 px-4 lg:px-6">
         {/* Brand */}
-        <a href="#" className="flex items-center gap-2.5" aria-label="Helix home">
+        <a href="/" className="flex items-center gap-2.5" aria-label="Helix home">
           <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-primary to-primary-deep shadow-glow">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M5 16c3-1 4-9 7-9s2 6 5 6" stroke="white" strokeWidth="2" strokeLinecap="round" />
@@ -26,10 +29,12 @@ export function TopNav() {
 
         {/* Primary nav */}
         <nav className="ml-2 hidden items-center gap-1 md:flex" aria-label="Primary">
-          {NAV.map(({ label, icon: Icon, active }) => (
+          {NAV.map(({ label, icon: Icon, href }) => {
+            const active = href === "/" ? pathname === "/" : pathname.startsWith(href.split("#")[0]) && href !== "/";
+            return (
             <a
               key={label}
-              href="#"
+              href={href}
               aria-current={active ? "page" : undefined}
               className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors ${
                 active
@@ -40,7 +45,8 @@ export function TopNav() {
               <Icon size={16} />
               {label}
             </a>
-          ))}
+            );
+          })}
         </nav>
 
         {/* Search */}
