@@ -113,7 +113,7 @@ export function SignalsPanel({ signals }: { signals: Signal[] }) {
                       ))}
                     </div>
                   )}
-                  <Freedom24Button symbol={s.symbol} kind={s.kind} />
+                  <Freedom24Button symbol={s.symbol} kind={s.kind} className="w-full" />
                 </div>
               )}
             </li>

@@ -36,27 +36,31 @@ you can read exactly why anything scored the way it did.
 
 ## Trade on Freedom24
 
-Every signal (in its detail panel) and every mover card carries a **Trade on
-Freedom24** button that deep-links to that instrument at
-[Freedom24](https://freedom24.com), so you can go place the order with your
-broker. Helix never executes orders — the buttons just hand off to Freedom24.
+**Trade on Freedom24** buttons open the **exact instrument** at Freedom24 so you
+can place the order with your broker. Helix never executes orders — the buttons
+just hand off. They appear:
 
-Freedom24 identifies instruments with a market-suffixed ticker (`AAPL.US`,
-`TSLA.US`); crypto maps to the base coin. Two optional env vars tune the links:
+- on the **main dashboard chart** (opens the exact stock you're viewing),
+- in each **signal's** detail panel,
+- on every **Market Pulse** mover card,
+- as a header CTA.
+
+Links use Freedom24's real instrument path,
+`https://freedom24.com/what-to-buy/stocks/{TICKER}` — e.g. viewing NVDA links to
+`https://freedom24.com/what-to-buy/stocks/NVDA.US`. Freedom24 identifies stocks
+with a market-suffixed ticker (`.US` for US listings); crypto maps to the base
+coin and falls back to Freedom24's browse page.
+
+Two optional env vars tune the links:
 
 ```bash
-# Point buttons at the exact instrument page you see when logged in.
-# Use {ticker} as the placeholder (Freedom24 blocks automated URL discovery,
-# so confirm the path from your account and set it here).
-NEXT_PUBLIC_FREEDOM24_URL="https://freedom24.com/charts/{ticker}"
+# Override the URL pattern (e.g. to point at the logged-in terminal).
+# Use {ticker} as the placeholder.
+NEXT_PUBLIC_FREEDOM24_URL="https://freedom24.com/what-to-buy/stocks/{ticker}"
 
 # Optional partner / referral code appended to every Freedom24 link.
 NEXT_PUBLIC_FREEDOM24_REF="your-code"
 ```
-
-If `NEXT_PUBLIC_FREEDOM24_URL` is unset, links default to Freedom24's US-stocks
-page with the ticker as a query param. Set it once to enable true per-instrument
-deep links.
 
 ## Data sources (keyless, public)
 

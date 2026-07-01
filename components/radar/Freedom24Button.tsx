@@ -61,7 +61,7 @@ export function Freedom24Button({
       rel="noreferrer"
       aria-label={label}
       onClick={(e) => e.stopPropagation()}
-      className={`flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[#0FA958] to-[#0c8f4a] px-3 py-2 text-sm font-semibold text-white shadow-card transition-opacity hover:opacity-90 ${className}`}
+      className={`inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[#0FA958] to-[#0c8f4a] px-3 py-2 text-sm font-semibold text-white shadow-card transition-opacity hover:opacity-90 ${className}`}
     >
       <F24Mark size={16} />
       Trade {symbol} on Freedom24

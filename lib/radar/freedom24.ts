@@ -4,15 +4,17 @@
 // (e.g. AAPL.US, ASML.EU, TSLA.US). Our equity universe is all US-listed, so
 // ".US" is the correct default; crypto maps to the base coin symbol.
 //
-// The link template is environment-configurable because Freedom24 blocks
-// automated verification of its exact instrument path. To point the buttons at
-// the precise page you see when logged in, set NEXT_PUBLIC_FREEDOM24_URL and use
-// `{ticker}` as the placeholder, e.g.
-//   NEXT_PUBLIC_FREEDOM24_URL="https://freedom24.com/charts/{ticker}"
-// Add a partner/referral code with NEXT_PUBLIC_FREEDOM24_REF.
+// Freedom24's public instrument page is /what-to-buy/stocks/{TICKER} (e.g.
+// https://freedom24.com/what-to-buy/stocks/TSLA.US) — the button opens that
+// exact stock. Override the pattern with NEXT_PUBLIC_FREEDOM24_URL (use
+// `{ticker}` as the placeholder) if you want the logged-in terminal URL
+// instead. Add a partner/referral code with NEXT_PUBLIC_FREEDOM24_REF.
 
-const TEMPLATE =
-  process.env.NEXT_PUBLIC_FREEDOM24_URL?.trim() || "https://freedom24.com/us-stocks";
+const CUSTOM = process.env.NEXT_PUBLIC_FREEDOM24_URL?.trim() || "";
+const EQUITY_DEFAULT = "https://freedom24.com/what-to-buy/stocks/{ticker}";
+// Freedom24's crypto listings don't live under /stocks; browse page is the safe
+// landing when no custom template is configured.
+const CRYPTO_DEFAULT = "https://freedom24.com/what-to-buy";
 const REF = process.env.NEXT_PUBLIC_FREEDOM24_REF?.trim() || "";
 
 const withRef = (url: string): string =>
@@ -24,15 +26,18 @@ export function toF24Ticker(symbol: string, kind: "equity" | "crypto"): string {
   return /\.[A-Z]{2}$/.test(symbol) ? symbol : `${symbol}.US`;
 }
 
-/** Deep link that opens the instrument on Freedom24. */
+/** Deep link that opens the exact instrument on Freedom24. */
 export function freedom24Url(symbol: string, kind: "equity" | "crypto"): string {
   const ticker = toF24Ticker(symbol, kind);
+  const template = CUSTOM || (kind === "crypto" ? CRYPTO_DEFAULT : EQUITY_DEFAULT);
   let url: string;
-  if (TEMPLATE.includes("{ticker}")) {
-    url = TEMPLATE.replace(/\{ticker\}/g, encodeURIComponent(ticker));
+  if (template.includes("{ticker}")) {
+    url = template.replace(/\{ticker\}/g, encodeURIComponent(ticker));
+  } else if (kind === "crypto" && !CUSTOM) {
+    url = template; // browse page — no per-coin path
   } else {
-    const sep = TEMPLATE.includes("?") ? "&" : "?";
-    url = `${TEMPLATE}${sep}ticker=${encodeURIComponent(ticker)}`;
+    const sep = template.includes("?") ? "&" : "?";
+    url = `${template}${sep}ticker=${encodeURIComponent(ticker)}`;
   }
   return withRef(url);
 }
