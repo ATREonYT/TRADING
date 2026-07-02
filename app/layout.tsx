@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { CommandPalette } from "@/components/CommandPalette";
+import { AccountProvider } from "@/components/AccountContext";
 
 const title = "Helix — Trade the news before it moves the tape";
 const description =
@@ -51,8 +52,10 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-dvh bg-base text-ink antialiased">
-        {children}
-        <CommandPalette />
+        <AccountProvider>
+          {children}
+          <CommandPalette />
+        </AccountProvider>
       </body>
     </html>
   );

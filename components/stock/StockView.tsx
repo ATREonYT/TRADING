@@ -6,6 +6,7 @@ import type { Indicators, Projection, HiddenSignal } from "@/lib/radar/analytics
 import { AnimatedArea } from "@/components/landing/AnimatedArea";
 import { CandleChart } from "./CandleChart";
 import { ProjectionChart } from "./ProjectionChart";
+import { TradeTicket } from "./TradeTicket";
 import { relTime, sentimentBg, directionArrow, CATEGORY_LABEL, leanBg } from "@/components/radar/helpers";
 import { Radar, Refresh, Zap, External, ArrowUp, ArrowDown, Newspaper } from "@/components/icons";
 import { usd, num, pct, dirClass } from "@/lib/format";
@@ -217,7 +218,9 @@ export function StockView({ symbol }: { symbol: string }) {
           )}
         </div>
 
-        {/* Analytics */}
+        {/* Right rail: trade ticket + analytics */}
+        <div className="flex min-w-0 flex-col gap-4">
+        <TradeTicket symbol={symbol} name={data?.name ?? symbol} kind={data?.kind ?? "equity"} price={q?.price ?? null} />
         <div className="glossy flex flex-col gap-4 rounded-2xl p-5">
           <h2 className="text-sm font-semibold text-ink">Analytics</h2>
           {s ? (
@@ -275,6 +278,7 @@ export function StockView({ symbol }: { symbol: string }) {
           ) : (
             <div className="text-sm text-faint">{loading ? "Loading…" : "No analytics yet"}</div>
           )}
+        </div>
         </div>
       </div>
 

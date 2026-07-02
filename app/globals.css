@@ -9,6 +9,21 @@
     --font-fira-code: "Fira Code", ui-monospace, "SF Mono", monospace;
   }
 
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Tactile press feedback on every button (springy ease-back release) */
+  button,
+  [role="button"] {
+    transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1);
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:active:not(:disabled),
+  [role="button"]:active {
+    transform: scale(0.96);
+  }
+
   html,
   body {
     background-color: theme("colors.base");

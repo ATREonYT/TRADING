@@ -75,6 +75,14 @@ const config: Config = {
           "0%, 100%": { opacity: "1" },
           "50%": { opacity: "0" },
         },
+        "page-in": {
+          "0%": { opacity: "0", transform: "translateY(10px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        "drop-in": {
+          "0%": { opacity: "0", transform: "translateY(-6px) scale(0.98)" },
+          "100%": { opacity: "1", transform: "translateY(0) scale(1)" },
+        },
       },
       animation: {
         "fade-up": "fade-up 240ms ease-out both",
@@ -86,6 +94,8 @@ const config: Config = {
         rise: "rise 700ms cubic-bezier(0.22,1,0.36,1) both",
         "glow-breathe": "glow-breathe 7s ease-in-out infinite",
         blink: "blink 1.1s step-end infinite",
+        "page-in": "page-in 350ms cubic-bezier(0.22,1,0.36,1) both",
+        "drop-in": "drop-in 180ms cubic-bezier(0.22,1,0.36,1) both",
       },
     },
   },

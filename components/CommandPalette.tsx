@@ -13,6 +13,8 @@ const ACTIONS: Item[] = [
   { type: "action", id: "home", label: "Home", hint: "Landing page", href: "/", icon: "home" },
   { type: "action", id: "dashboard", label: "Dashboard", hint: "Portfolio & charts", href: "/dashboard", icon: "dashboard" },
   { type: "action", id: "radar", label: "Radar", hint: "News & scanner", href: "/radar", icon: "radar" },
+  { type: "action", id: "paper", label: "Paper Trading", hint: "Practice portfolio", href: "/paper", icon: "dashboard" },
+  { type: "action", id: "account", label: "Account", hint: "Profile & sign in", href: "/account", icon: "home" },
 ];
 
 /**
