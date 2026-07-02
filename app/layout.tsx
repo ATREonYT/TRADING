@@ -1,10 +1,38 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { CommandPalette } from "@/components/CommandPalette";
+
+const title = "Helix — Trade the news before it moves the tape";
+const description =
+  "Real-time market intelligence: world & financial news from 65+ sources, catalyst analysis that pinpoints what actually moves prices, and a full-market scanner for traders.";
 
 export const metadata: Metadata = {
-  title: "Helix — Trade the news before it moves the tape",
-  description:
-    "Real-time market intelligence: world & financial news from 65+ sources, catalyst analysis that pinpoints what actually moves prices, and a full-market scanner for traders.",
+  metadataBase: new URL("https://helix.example.com"),
+  title: {
+    default: title,
+    template: "%s · Helix",
+  },
+  description,
+  applicationName: "Helix",
+  keywords: [
+    "trading news",
+    "market intelligence",
+    "stock catalysts",
+    "financial news",
+    "market scanner",
+    "real-time markets",
+  ],
+  openGraph: {
+    type: "website",
+    title,
+    description,
+    siteName: "Helix",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
+  },
 };
 
 export default function RootLayout({
@@ -22,7 +50,10 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-dvh bg-base text-ink antialiased">{children}</body>
+      <body className="min-h-dvh bg-base text-ink antialiased">
+        {children}
+        <CommandPalette />
+      </body>
     </html>
   );
 }
