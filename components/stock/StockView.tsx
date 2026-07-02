@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { NewsItem, Quote, Signal } from "@/lib/radar/types";
+import type { Indicators, Projection, HiddenSignal } from "@/lib/radar/analytics";
 import { AnimatedArea } from "@/components/landing/AnimatedArea";
+import { ProjectionChart } from "./ProjectionChart";
 import { relTime, sentimentBg, directionArrow, CATEGORY_LABEL, leanBg } from "@/components/radar/helpers";
 import { Radar, Refresh, Zap, External, ArrowUp, ArrowDown, Newspaper } from "@/components/icons";
 import { usd, num, pct, dirClass } from "@/lib/format";
@@ -16,6 +18,10 @@ interface StockData {
   quote: Quote | null;
   signal: Signal | null;
   news: NewsItem[];
+  indicators: Indicators | null;
+  projection: Projection | null;
+  hidden: HiddenSignal[];
+  briefing: string;
   notes: string[];
 }
 
@@ -141,6 +147,54 @@ export function StockView({ symbol }: { symbol: string }) {
         </div>
       </div>
 
+      {/* Helix Brief — auto-generated analyst summary */}
+      {data?.briefing && (
+        <div className="glossy rounded-2xl p-4">
+          <div className="mb-1.5 flex items-center gap-2">
+            <span className="grid h-6 w-6 place-items-center rounded-md bg-primary/15 text-primary">
+              <Radar size={13} />
+            </span>
+            <h2 className="text-sm font-semibold text-ink">Helix Brief</h2>
+            <span className="ml-auto text-2xs text-faint">generated from live data</span>
+          </div>
+          <p className="text-sm leading-relaxed text-muted">{data.briefing}</p>
+        </div>
+      )}
+
+      {/* Hidden signals — what others miss */}
+      {(data?.hidden?.length ?? 0) > 0 && (
+        <div className="glossy rounded-2xl p-4">
+          <div className="mb-2.5 flex items-center gap-2">
+            <span className="grid h-6 w-6 place-items-center rounded-md bg-accent/15 text-accent">
+              <Zap size={13} />
+            </span>
+            <h2 className="text-sm font-semibold text-ink">Hidden signals</h2>
+            <span className="ml-auto text-2xs text-faint">patterns the headline feed won&apos;t show</span>
+          </div>
+          <div className="grid gap-2 md:grid-cols-2">
+            {data!.hidden.map((h) => (
+              <div
+                key={h.key}
+                className={`rounded-xl border p-3 ${
+                  h.tone === "bullish"
+                    ? "border-up/30 bg-up/[0.06]"
+                    : h.tone === "bearish"
+                      ? "border-down/30 bg-down/[0.06]"
+                      : "border-accent/30 bg-accent/[0.06]"
+                }`}
+              >
+                <div className={`mb-1 flex items-center gap-1.5 text-xs font-bold ${
+                  h.tone === "bullish" ? "text-up" : h.tone === "bearish" ? "text-down" : "text-accent"
+                }`}>
+                  {directionArrow(h.tone)} {h.title}
+                </div>
+                <p className="text-2xs leading-relaxed text-muted">{h.detail}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Chart + analytics */}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         {/* Price chart */}
@@ -174,6 +228,34 @@ export function StockView({ symbol }: { symbol: string }) {
                 <Stat label="Bullish" value={String(bull)} tint="text-up" />
                 <Stat label="Bearish" value={String(bear)} tint="text-down" />
               </div>
+              {data?.indicators && (
+                <div className="grid grid-cols-2 gap-2 border-t border-border/60 pt-3">
+                  <Stat
+                    label="RSI (14)"
+                    value={data.indicators.rsi14 != null ? String(data.indicators.rsi14) : "—"}
+                    tint={
+                      data.indicators.rsi14 != null && data.indicators.rsi14 >= 70
+                        ? "text-down"
+                        : data.indicators.rsi14 != null && data.indicators.rsi14 <= 30
+                          ? "text-up"
+                          : "text-ink"
+                    }
+                  />
+                  <Stat
+                    label="Trend"
+                    value={data.indicators.trend}
+                    tint={data.indicators.trend === "uptrend" ? "text-up" : data.indicators.trend === "downtrend" ? "text-down" : "text-muted"}
+                  />
+                  <Stat label="Volatility / bar" value={`${data.indicators.volatilityPct.toFixed(1)}%`} />
+                  <Stat label="Range position" value={`${data.indicators.rangePos}%`} />
+                  <Stat
+                    label="Streak"
+                    value={`${Math.abs(data.indicators.streak)} bar${Math.abs(data.indicators.streak) === 1 ? "" : "s"} ${data.indicators.streak >= 0 ? "up" : "down"}`}
+                    tint={data.indicators.streak >= 0 ? "text-up" : "text-down"}
+                  />
+                  <Stat label="Momentum z" value={`${data.indicators.momentumZ > 0 ? "+" : ""}${data.indicators.momentumZ}`} />
+                </div>
+              )}
               {s.drivers.length > 0 && (
                 <ul className="space-y-1 border-t border-border/60 pt-2">
                   {s.drivers.map((d, i) => (
@@ -190,6 +272,46 @@ export function StockView({ symbol }: { symbol: string }) {
           )}
         </div>
       </div>
+
+      {/* Price scenario — the projection cone */}
+      {data?.projection && q && (
+        <div className="glossy rounded-2xl p-5">
+          <div className="mb-1 flex flex-wrap items-center gap-2">
+            <h2 className="text-sm font-semibold text-ink">Price scenario · next {data.projection.steps} bars</h2>
+            <span
+              className={`rounded px-2 py-0.5 text-2xs font-bold ring-1 ${
+                data.projection.expectedMovePct >= 0 ? "bg-up/15 text-up ring-up/30" : "bg-down/15 text-down ring-down/30"
+              }`}
+            >
+              {data.projection.expectedMovePct >= 0 ? "▲" : "▼"} {Math.abs(data.projection.expectedMovePct).toFixed(1)}% median path
+            </span>
+            <span className="ml-auto text-2xs text-faint">80% volatility cone · not a forecast guarantee</span>
+          </div>
+
+          <div className="mt-2 grid gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+            <ProjectionChart history={q.spark} projection={data.projection} />
+            <div className="flex flex-col gap-3">
+              <div className="grid grid-cols-2 gap-2">
+                <Stat label="Prob. of upside" value={`${data.projection.upProbability}%`} tint={data.projection.upProbability >= 50 ? "text-up" : "text-down"} />
+                <Stat label="Confidence" value={data.projection.confidence} tint="text-accent" />
+                <Stat label="Cone high" value={usd(data.projection.upper[data.projection.steps])} tint="text-up" />
+                <Stat label="Cone low" value={usd(data.projection.lower[data.projection.steps])} tint="text-down" />
+              </div>
+              <div>
+                <div className="mb-1 text-2xs font-semibold uppercase tracking-wide text-faint">What drives this path</div>
+                <ul className="space-y-1">
+                  {data.projection.driftDrivers.map((d, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-2xs text-muted">
+                      <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary" />
+                      {d}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Catalysts */}
       {topCatalysts.length > 0 && (

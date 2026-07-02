@@ -5,6 +5,7 @@ import type { NewsItem, Quote, Signal } from "@/lib/radar/types";
 import { useLive } from "./useLive";
 import { BreakingBanner } from "./BreakingBanner";
 import { MarketPulse } from "./MarketPulse";
+import { EdgePanel } from "./EdgePanel";
 import { NewsFeed } from "./NewsFeed";
 import { SignalsPanel } from "./SignalsPanel";
 import { Radar, Refresh, Zap, Newspaper, ArrowUp, ArrowDown } from "@/components/icons";
@@ -113,6 +114,7 @@ export function RadarView() {
 
       <BreakingBanner items={news.data} />
       <MarketPulse quotes={markets.data} />
+      <EdgePanel signals={signals.data} />
 
       {/* Two-column: news + scanner */}
       <div className="grid min-h-0 gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">

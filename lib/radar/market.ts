@@ -49,7 +49,7 @@ const avg = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length
 // ---- Equities (Yahoo Finance) ------------------------------------------------
 
 async function equityQuote(symbol: string): Promise<Quote | undefined> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=3mo&interval=1d`;
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=3mo&interval=1d`;
   const json = await withTimeout(
     async (signal) => {
       const r = await fetch(url, { signal, headers: UA, cache: "no-store" });
@@ -95,7 +95,7 @@ export async function fetchEquityQuotes(
 // ---- Crypto (Binance) --------------------------------------------------------
 
 async function cryptoQuote(pair: string): Promise<Quote | undefined> {
-  const url = `https://api.binance.com/api/v3/klines?symbol=${pair}&interval=1h&limit=48`;
+  const url = `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(pair)}&interval=1h&limit=48`;
   const rows: [number, string, string, string, string, string][] = await withTimeout(
     async (signal) => {
       const r = await fetch(url, { signal, headers: UA, cache: "no-store" });

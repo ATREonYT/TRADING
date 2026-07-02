@@ -1,4 +1,5 @@
 import type { FeedSource } from "./sources";
+import { safeHttpUrl } from "./validate";
 
 // Dependency-free RSS/Atom parsing. We only need title/link/summary/date, so a
 // tolerant tag extractor beats pulling in a full XML parser.
@@ -32,11 +33,13 @@ const tag = (block: string, name: string): string | null => {
 };
 
 // Atom links look like <link href="..."/>; RSS links are <link>...</link>.
+// Whatever we find is scheme-checked: a hostile feed item must not be able to
+// smuggle a javascript:/data: URL into an <a href>.
 const link = (block: string): string => {
   const href = block.match(/<link[^>]*href=["']([^"']+)["']/i);
-  if (href) return href[1];
+  if (href) return safeHttpUrl(href[1]);
   const rss = tag(block, "link");
-  return rss ? decodeEntities(rss) : "";
+  return rss ? safeHttpUrl(decodeEntities(rss)) : "";
 };
 
 const parseFeed = (xml: string, source: string): RawArticle[] => {

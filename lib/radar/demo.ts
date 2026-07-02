@@ -21,8 +21,17 @@ const RAW: RawArticle[] = [
   { title: "AMD climbs on strong data-center guidance and partnership win", summary: "The chipmaker raised its outlook, adding to a broad semiconductor rally.", url: "#", source: "Demo · Tech", publishedAt: minsAgo(18) },
 ];
 
+// Deterministic wobble (layered sines) so demo charts and analytics behave
+// like real, noisy price series — no Math.random, stable across SSR/CSR.
 const spark = (base: number, drift: number): number[] =>
-  Array.from({ length: 30 }, (_, i) => +(base * (1 + (drift * i) / 100 / 30)).toFixed(2));
+  Array.from({ length: 30 }, (_, i) => {
+    const trend = (drift * i) / 100 / 30;
+    const noise =
+      0.011 * Math.sin(i * 1.7 + base % 7) +
+      0.006 * Math.sin(i * 0.6 + base % 3) +
+      0.004 * Math.sin(i * 2.9);
+    return +(base * (1 + trend + noise)).toFixed(2);
+  });
 
 const DEMO_QUOTES: Quote[] = [
   { symbol: "NVDA", name: "Nvidia", kind: "equity", price: 132.4, changePct: 6.2, volumeRatio: 320, spark: spark(124, 6.2), currency: "USD", updatedAt: minsAgo(1) },

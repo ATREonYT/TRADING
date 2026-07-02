@@ -6,6 +6,16 @@ import { fetchEquityQuotes, fetchCryptoQuotes } from "@/lib/radar/market";
 import { buildSignals } from "@/lib/radar/signals";
 import { demoNews, demoQuotes } from "@/lib/radar/demo";
 import { lookupSymbol } from "@/lib/symbolCatalog";
+import { isValidSymbol, escapeRegExp } from "@/lib/radar/validate";
+import {
+  computeIndicators,
+  projectPrice,
+  findHiddenSignals,
+  buildBriefing,
+  type Indicators,
+  type Projection,
+  type HiddenSignal,
+} from "@/lib/radar/analytics";
 import type { NewsItem, Quote, Signal } from "@/lib/radar/types";
 
 export const runtime = "nodejs";
@@ -25,12 +35,29 @@ interface StockPayload {
   quote: Quote | null;
   signal: Signal | null;
   news: NewsItem[];
+  indicators: Indicators | null;
+  projection: Projection | null;
+  hidden: HiddenSignal[];
+  briefing: string;
   notes: string[];
 }
 
 export async function GET(req: Request): Promise<NextResponse<StockPayload>> {
-  const raw = new URL(req.url).searchParams.get("symbol") ?? "";
+  const raw = (new URL(req.url).searchParams.get("symbol") ?? "").toUpperCase().slice(0, 20);
   const { symbol, name, kind } = lookupSymbol(raw);
+  // Reject anything that isn't a plain ticker before it reaches upstream URLs.
+  if (!isValidSymbol(symbol)) {
+    return NextResponse.json(
+      {
+        ok: false, degraded: false, generatedAt: new Date().toISOString(),
+        symbol: "", name: "", kind: "equity" as const,
+        quote: null, signal: null, news: [],
+        indicators: null, projection: null, hidden: [], briefing: "",
+        notes: ["Invalid symbol."],
+      },
+      { status: 400 },
+    );
+  }
   const base = symbol.replace(/-USD$/, "");
   const notes: string[] = [];
   let degraded = false;
@@ -43,7 +70,7 @@ export async function GET(req: Request): Promise<NextResponse<StockPayload>> {
   if (kind === "equity") {
     feeds.push({
       name: `Yahoo Finance · ${base}`,
-      url: `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${base}&region=US&lang=en-US`,
+      url: `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${encodeURIComponent(base)}&region=US&lang=en-US`,
       category: "equities",
     });
   }
@@ -63,12 +90,13 @@ export async function GET(req: Request): Promise<NextResponse<StockPayload>> {
 
   // Keep only stories actually about this instrument.
   const needleName = name.toLowerCase();
+  const tickerRe = new RegExp(`\\b${escapeRegExp(base)}\\b`);
   news = news.filter(
     (n) =>
       n.symbols.includes(symbol) ||
       n.symbols.includes(base) ||
       `${n.title} ${n.summary}`.toLowerCase().includes(needleName) ||
-      new RegExp(`\\b${base}\\b`).test(`${n.title} ${n.summary}`),
+      tickerRe.test(`${n.title} ${n.summary}`),
   );
 
   let quote: Quote | null =
@@ -88,6 +116,21 @@ export async function GET(req: Request): Promise<NextResponse<StockPayload>> {
 
   const signal: Signal | null = quote ? buildSignals([quote], news)[0] ?? null : null;
 
+  // Deep analysis: indicators, hidden signals, and the projection cone.
+  const indicators = quote ? computeIndicators(quote.spark) : null;
+  const strongestCat = news
+    .filter((n) => n.catalyst && n.catalyst.direction !== "neutral")
+    .sort((a, b) => (b.catalyst?.strength ?? 0) - (a.catalyst?.strength ?? 0))[0]?.catalyst;
+  const catalystPush = strongestCat
+    ? (strongestCat.direction === "bullish" ? 1 : -1) * strongestCat.strength
+    : 0;
+  const projection =
+    quote && signal ? projectPrice(quote.spark, quote.price, signal.breakdown, catalystPush) : null;
+  const hidden = quote ? findHiddenSignals(quote, news, indicators) : [];
+  const briefing = quote
+    ? buildBriefing(name, quote, signal, indicators, projection, hidden)
+    : "";
+
   return NextResponse.json({
     ok: true,
     degraded,
@@ -98,6 +141,10 @@ export async function GET(req: Request): Promise<NextResponse<StockPayload>> {
     quote,
     signal,
     news: news.slice(0, 40),
+    indicators,
+    projection,
+    hidden,
+    briefing,
     notes,
   });
 }
