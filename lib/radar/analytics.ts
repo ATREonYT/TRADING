@@ -111,11 +111,21 @@ export function projectPrice(
   const vol = Math.max(ind.volatilityPct / 100, 0.004); // floor: 0.4%/bar
 
   // Drift blend, each term in −1..1 — weights sum to 1 and are documented.
-  const trendTerm = clamp(ind.trendStrengthPct / 3, -1, 1);        // 35%
+  // The trend term is normalized by observed volatility: a 2% MA gap means a
+  // lot in a calm tape and nothing in a wild one. (Without this the model
+  // mistook random-walk noise for trend — caught by the backtest harness.)
+  const trendTerm = clamp(ind.trendStrengthPct / (3 * Math.max(ind.volatilityPct, 0.6)), -1, 1); // 35%
   const momTerm = clamp(breakdown.momentum / 100, -1, 1);          // 25%
   const newsTerm = clamp(breakdown.sentiment / 100, -1, 1);        // 25%
   const catTerm = clamp(catalystPush / 100, -1, 1);                // 15%
   let k = 0.35 * trendTerm + 0.25 * momTerm + 0.25 * newsTerm + 0.15 * catTerm;
+
+  const agreeing =
+    [trendTerm, momTerm, newsTerm, catTerm].filter((t) => Math.sign(t) === Math.sign(k) && Math.abs(t) > 0.15).length;
+
+  // Single-driver shrinkage: one lone signal is much more likely to be noise
+  // than three agreeing ones — bleed the drift toward zero.
+  if (agreeing <= 1) k *= 0.55;
 
   // Mean-reversion guard: stretched RSI bleeds the drift toward zero.
   if (ind.rsi14 != null) {
@@ -124,7 +134,13 @@ export function projectPrice(
   }
 
   const driftPerStep = k * vol * 0.9; // drift can't plausibly outrun volatility
-  const z80 = 0.8416; // 80th percentile of the normal distribution
+  // Central 80% band: P(|Z| < z) = 0.80 → z = Φ⁻¹(0.90) = 1.2816.
+  // (0.8416 — the one-sided 80th percentile — would only cover 60% centrally;
+  // the calibration test in tests/analytics.test.ts guards this.)
+  // ×1.12: small-sample correction — vol is estimated from ~29 returns and the
+  // residual drift term adds off-center error; without inflation the measured
+  // coverage was ~74.5% on the synthetic harness (scripts/backtest.ts).
+  const z80 = 1.2816 * 1.12;
 
   const median = [price];
   const upper = [price];
@@ -136,13 +152,13 @@ export function projectPrice(
   }
 
   const expectedMovePct = (median[steps] / price - 1) * 100;
-  // P(end > now) under the same lognormal assumption.
-  const zEnd = (driftPerStep * steps) / (vol * Math.sqrt(steps));
-  const upProbability = Math.round(clamp(50 + 34 * Math.tanh(zEnd * 0.9), 8, 92));
-
-  const agreeing =
-    [trendTerm, momTerm, newsTerm, catTerm].filter((t) => Math.sign(t) === Math.sign(k) && Math.abs(t) > 0.15).length;
   const confidence = agreeing >= 3 ? "high" : agreeing === 2 ? "medium" : "low";
+
+  // P(end > now) under the same lognormal assumption, with the probability
+  // shrunk toward 50 when few drivers agree — calibration over bravado.
+  const zEnd = (driftPerStep * steps) / (vol * Math.sqrt(steps));
+  const probCoef = confidence === "high" ? 34 : confidence === "medium" ? 28 : 18;
+  const upProbability = Math.round(clamp(50 + probCoef * Math.tanh(zEnd * 0.9), 8, 92));
 
   const driftDrivers: string[] = [];
   if (Math.abs(trendTerm) > 0.15)

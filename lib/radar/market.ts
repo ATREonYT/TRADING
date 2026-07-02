@@ -48,16 +48,26 @@ const avg = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length
 
 // ---- Equities (Yahoo Finance) ------------------------------------------------
 
+// Yahoo rate-limits datacenter IPs on query1 at times; query2 is a mirror.
+async function yahooChart(symbol: string): Promise<any> {
+  const path = `/v8/finance/chart/${encodeURIComponent(symbol)}?range=3mo&interval=1d`;
+  let lastErr: Error = new Error("yahoo unreachable");
+  for (const host of ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]) {
+    try {
+      return await withTimeout(async (signal) => {
+        const r = await fetch(`https://${host}${path}`, { signal, headers: UA, cache: "no-store" });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      }, 8000);
+    } catch (e) {
+      lastErr = e as Error;
+    }
+  }
+  throw lastErr;
+}
+
 async function equityQuote(symbol: string): Promise<Quote | undefined> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=3mo&interval=1d`;
-  const json = await withTimeout(
-    async (signal) => {
-      const r = await fetch(url, { signal, headers: UA, cache: "no-store" });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.json();
-    },
-    8000,
-  );
+  const json = await yahooChart(symbol);
   const result = json?.chart?.result?.[0];
   if (!result) return undefined;
   const meta = result.meta ?? {};
@@ -125,10 +135,48 @@ async function cryptoQuote(pair: string): Promise<Quote | undefined> {
   };
 }
 
+// OKX fallback for hosts where Binance geo-blocks (HTTP 451 on many cloud IPs).
+// Same OHLCV shape, different envelope: data rows are newest-first strings.
+async function okxQuote(pair: string): Promise<Quote | undefined> {
+  const base = pair.replace(/USDT$/, "");
+  const url = `https://www.okx.com/api/v5/market/candles?instId=${encodeURIComponent(`${base}-USDT`)}&bar=1H&limit=48`;
+  const json = await withTimeout(
+    async (signal) => {
+      const r = await fetch(url, { signal, headers: UA, cache: "no-store" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+    8000,
+  );
+  const rows: string[][] = json?.data;
+  if (!Array.isArray(rows) || rows.length < 25) return undefined;
+  const asc = [...rows].reverse();
+  const closes = asc.map((k) => Number(k[4]));
+  const vols = asc.map((k) => Number(k[5]));
+  const price = closes[closes.length - 1];
+  const prev24 = closes[closes.length - 25];
+  const recentVol = avg(vols.slice(-6));
+  const baseVol = avg(vols.slice(-30, -6));
+  return {
+    symbol: `${base}-USD`,
+    name: CRYPTO_NAMES[base] ?? base,
+    kind: "crypto",
+    price,
+    changePct: prev24 ? ((price - prev24) / prev24) * 100 : 0,
+    volumeRatio: baseVol ? (recentVol / baseVol) * 100 : null,
+    spark: closes.slice(-30),
+    currency: "USD",
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 export async function fetchCryptoQuotes(
   pairs: string[] = CRYPTO_UNIVERSE,
 ): Promise<Quote[]> {
-  return pooled(pairs, 8, cryptoQuote).then((q) => q.filter(Boolean) as Quote[]);
+  const binance = (await pooled(pairs, 8, cryptoQuote)).filter(Boolean) as Quote[];
+  if (binance.length > 0) return binance;
+  // Whole-batch fallback: if Binance yielded nothing (geo-block/outage), try OKX.
+  return (await pooled(pairs, 8, okxQuote)).filter(Boolean) as Quote[];
 }
 
 export async function fetchAllQuotes(): Promise<{ quotes: Quote[]; failed: boolean }> {

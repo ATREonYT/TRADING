@@ -113,7 +113,13 @@ const RULES: Rule[] = [
     direction: "context",
     strength: 78,
     why: "Rate decisions reset the discount rate for every asset — the single biggest macro driver of stocks and crypto.",
-    patterns: [/\b(federal reserve|the fed|FOMC|powell|rate (cut|hike|decision)|interest rates|basis points|hawkish|dovish)\b/i],
+    patterns: [
+      /\b(federal reserve|FOMC|powell|ECB|central bank)\b/i,
+      // Bare "Fed" only counts near policy words (avoids "fed up" false hits).
+      /\bfed\b.{0,50}\b(rate|rates|hikes?|cuts?|policy|meeting|minutes|inflation)\b/i,
+      /\brate (cuts?|hikes?|decision)\b/i,
+      /\b(interest rates|basis points|hawkish|dovish)\b/i,
+    ],
   },
   {
     type: "regulatory_legal",

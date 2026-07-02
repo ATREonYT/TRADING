@@ -42,15 +42,30 @@ const link = (block: string): string => {
   return rss ? safeHttpUrl(decodeEntities(rss)) : "";
 };
 
-const parseFeed = (xml: string, source: string): RawArticle[] => {
+// Google News formats every title as "Headline - Publisher". Strip the suffix
+// (it pollutes sentiment/symbol extraction) and surface the real outlet name.
+const splitGoogleTitle = (title: string): { title: string; publisher: string | null } => {
+  const m = title.match(/^(.{12,})\s[-–]\s([^-–]{2,60})$/);
+  if (!m) return { title, publisher: null };
+  return { title: m[1].trim(), publisher: m[2].trim() };
+};
+
+export const parseFeed = (xml: string, source: string, isGoogle = false): RawArticle[] => {
   const out: RawArticle[] = [];
   const blocks =
     xml.match(/<item[\s\S]*?<\/item>/gi) ??
     xml.match(/<entry[\s\S]*?<\/entry>/gi) ??
     [];
   for (const block of blocks) {
-    const title = tag(block, "title");
-    if (!title) continue;
+    const rawTitle = tag(block, "title");
+    if (!rawTitle) continue;
+    let title = decodeEntities(rawTitle);
+    let itemSource = source;
+    if (isGoogle) {
+      const split = splitGoogleTitle(title);
+      title = split.title;
+      if (split.publisher) itemSource = split.publisher;
+    }
     const date =
       tag(block, "pubDate") ??
       tag(block, "published") ??
@@ -64,11 +79,11 @@ const parseFeed = (xml: string, source: string): RawArticle[] => {
       "";
     const iso = date ? new Date(decodeEntities(date)).toISOString() : new Date().toISOString();
     out.push({
-      title: decodeEntities(title),
+      title,
       url: link(block),
       summary: decodeEntities(summary).slice(0, 400),
       publishedAt: Number.isNaN(Date.parse(iso)) ? new Date().toISOString() : iso,
-      source,
+      source: itemSource,
     });
   }
   return out;
@@ -90,7 +105,7 @@ async function fetchOne(feed: FeedSource, timeoutMs: number): Promise<RawArticle
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const xml = await res.text();
-    return parseFeed(xml, feed.name);
+    return parseFeed(xml, feed.name, feed.url.includes("news.google.com"));
   } finally {
     clearTimeout(t);
   }
