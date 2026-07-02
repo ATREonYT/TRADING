@@ -20,6 +20,14 @@ test("swap (futures) trade URLs strip the settle suffix", () => {
   assert.equal(bybit.tradeUrl("SOL/USDT:USDT"), "https://www.bybit.com/trade/usdt/SOLUSDT");
 });
 
+test("TradingView URLs (spot and perp)", () => {
+  const spot = new Market("mexc", "USDT", "spot");
+  assert.equal(spot.tradingViewUrl("PEPE/USDT"), "https://www.tradingview.com/chart/?symbol=MEXC:PEPEUSDT");
+
+  const swap = new Market("bybit", "USDT", "swap");
+  assert.equal(swap.tradingViewUrl("BTC/USDT:USDT"), "https://www.tradingview.com/chart/?symbol=BYBIT:BTCUSDT.P");
+});
+
 test("dex screener uses the base token", () => {
   const m = new Market("mexc", "USDT", "swap");
   assert.equal(m.dexScreenerUrl("MANTA/USDT:USDT"), "https://dexscreener.com/search?q=MANTA");

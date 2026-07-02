@@ -21,8 +21,9 @@ const scanner = new Scanner(cfg, (signal) => {
   const buttons = [
     [
       { text: tradeLabel, url: scanner.market.tradeUrl(signal.symbol) },
-      { text: "Dex Screener ↗", url: scanner.market.dexScreenerUrl(signal.symbol) },
+      { text: "📈 TradingView ↗", url: scanner.market.tradingViewUrl(signal.symbol) },
     ],
+    [{ text: "Dex Screener ↗", url: scanner.market.dexScreenerUrl(signal.symbol) }],
   ];
   if (cfg.dryRun) log.ok("[DRY_RUN] signal:\n" + text);
   else void bot.broadcast(text, buttons);
@@ -130,9 +131,10 @@ bot.on("risk", async (args, chatId) => {
   if ("error" in res) return res.error;
   const buttons = [
     [
-      { text: `🟢 Buy on ${cfg.exchange.toUpperCase()}`, url: scanner.market.tradeUrl(res.symbol) },
-      { text: "📊 Dex Screener", url: scanner.market.dexScreenerUrl(res.symbol) },
+      { text: `Trade on ${cfg.exchange.toUpperCase()} ↗`, url: scanner.market.tradeUrl(res.symbol) },
+      { text: "📈 TradingView ↗", url: scanner.market.tradingViewUrl(res.symbol) },
     ],
+    [{ text: "Dex Screener ↗", url: scanner.market.dexScreenerUrl(res.symbol) }],
   ];
   await bot.send(formatRiskReport(res), chatId, buttons);
 });

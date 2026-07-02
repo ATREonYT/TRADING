@@ -176,6 +176,15 @@ export class Market {
     }
   }
 
+  /** TradingView chart link (adds ".P" for perpetual futures). */
+  tradingViewUrl(symbol: string): string {
+    const base = symbol.split("/")[0] ?? symbol;
+    const quote = (symbol.split("/")[1] ?? "USDT").split(":")[0] ?? "USDT";
+    const ex = this.ex.id.toUpperCase();
+    const perp = this.marketType === "swap" ? ".P" : "";
+    return `https://www.tradingview.com/chart/?symbol=${ex}:${base}${quote}${perp}`;
+  }
+
   /** Dex Screener search for the base token (works for most listed coins). */
   dexScreenerUrl(symbol: string): string {
     const base = symbol.split("/")[0] ?? symbol;
