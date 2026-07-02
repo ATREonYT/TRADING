@@ -7,7 +7,7 @@ import { compactUsd } from "@/lib/format";
 import { searchCatalog } from "@/lib/symbolCatalog";
 import { radarLink } from "@/lib/radar/symbolLink";
 import { useAccount } from "./AccountContext";
-import { paperEquity } from "@/lib/account";
+import { paperEquity } from "@/lib/accounts";
 
 const NAV = [
   { label: "Home", icon: Grid, href: "/" },

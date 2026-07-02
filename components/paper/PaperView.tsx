@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useAccount } from "@/components/AccountContext";
-import { paperEquity, STARTING_CASH } from "@/lib/account";
+import { paperEquity, STARTING_CASH } from "@/lib/accounts";
 import type { Quote, RadarPayload } from "@/lib/radar/types";
 import { usd, num, signedUsd, pct } from "@/lib/format";
 import { radarLink } from "@/lib/radar/symbolLink";

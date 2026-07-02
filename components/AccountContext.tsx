@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
-import { currentUser, ACCOUNT_EVENT, type User } from "@/lib/account";
+import { getCurrentUser, initAccounts, ACCOUNT_EVENT, type User } from "@/lib/accounts";
 
 interface AccountCtx {
   user: User | null;
@@ -15,10 +15,11 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AccountCtx>({ user: null, ready: false });
 
   useEffect(() => {
-    const sync = () => setState({ user: currentUser(), ready: true });
+    initAccounts(); // restores a cloud session if Supabase is configured
+    const sync = () => setState({ user: getCurrentUser(), ready: true });
     sync();
     window.addEventListener(ACCOUNT_EVENT, sync);
-    window.addEventListener("storage", sync); // other tabs
+    window.addEventListener("storage", sync); // other tabs (local mode)
     return () => {
       window.removeEventListener(ACCOUNT_EVENT, sync);
       window.removeEventListener("storage", sync);

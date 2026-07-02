@@ -49,7 +49,7 @@ const emit = () => {
   if (isBrowser()) window.dispatchEvent(new Event(ACCOUNT_EVENT));
 };
 
-const freshPaper = (): PaperState => ({ cash: STARTING_CASH, positions: {}, trades: [] });
+export const freshPaper = (): PaperState => ({ cash: STARTING_CASH, positions: {}, trades: [] });
 
 function readUsers(): Record<string, User> {
   if (!isBrowser()) return {};
@@ -145,14 +145,12 @@ export interface TradeInput {
 
 const EPS = 1e-9;
 
-export function placeTrade(input: TradeInput): { ok: boolean; error?: string } {
-  const user = currentUser();
-  if (!user) return { ok: false, error: "Sign in to trade." };
+/** Pure trade engine — mutates `paper` in place. Shared by local & cloud modes. */
+export function applyTrade(paper: PaperState, input: TradeInput): { ok: boolean; error?: string } {
   const { symbol, name, kind, side, qty, price } = input;
   if (!Number.isFinite(qty) || qty <= 0) return { ok: false, error: "Enter a quantity above zero." };
   if (!Number.isFinite(price) || price <= 0) return { ok: false, error: "No live price for this symbol." };
 
-  const paper = user.paper;
   const total = qty * price;
   const pos = paper.positions[symbol];
 
@@ -183,7 +181,14 @@ export function placeTrade(input: TradeInput): { ok: boolean; error?: string } {
     total,
   });
   paper.trades = paper.trades.slice(0, 200);
+  return { ok: true };
+}
 
+export function placeTrade(input: TradeInput): { ok: boolean; error?: string } {
+  const user = currentUser();
+  if (!user) return { ok: false, error: "Sign in to trade." };
+  const res = applyTrade(user.paper, input);
+  if (!res.ok) return res;
   const users = readUsers();
   users[user.email] = user;
   writeUsers(users);

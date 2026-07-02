@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useAccount } from "@/components/AccountContext";
-import { placeTrade } from "@/lib/account";
+import { placeTrade } from "@/lib/accounts";
 import { usd } from "@/lib/format";
 import { Wallet } from "@/components/icons";
 
@@ -27,9 +27,9 @@ export function TradeTicket({
   const est = validQty && price ? qty * price : 0;
   const pos = user?.paper.positions[symbol];
 
-  const submit = (side: "buy" | "sell") => {
+  const submit = async (side: "buy" | "sell") => {
     if (!price) return;
-    const res = placeTrade({ symbol, name, kind, side, qty, price });
+    const res = await placeTrade({ symbol, name, kind, side, qty, price });
     setFlash(
       res.ok
         ? { kind: "ok", text: `${side === "buy" ? "Bought" : "Sold"} ${qty} ${symbol} @ ${usd(price)}` }

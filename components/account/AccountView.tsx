@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useAccount } from "@/components/AccountContext";
-import { signIn, signUp, signOut, resetPaper, STARTING_CASH } from "@/lib/account";
+import { signIn, signUp, signOut, resetPaper, STARTING_CASH, cloudEnabled } from "@/lib/accounts";
 import { usd } from "@/lib/format";
 import { Wallet } from "@/components/icons";
 
@@ -12,11 +12,18 @@ export function AccountView() {
   return (
     <div className="mx-auto max-w-[560px] px-4 py-10 lg:px-6">
       {user ? <Profile /> : <AuthForms />}
-      <p className="mt-6 rounded-lg border border-border bg-surface/50 px-3 py-2 text-2xs leading-relaxed text-faint">
-        <span className="font-semibold text-muted">Device-local account.</span> Helix has no server —
-        your account and paper portfolio are stored only in this browser (password salted &amp; hashed,
-        never sent anywhere). Clearing site data deletes the account.
-      </p>
+      {cloudEnabled ? (
+        <p className="mt-6 rounded-lg border border-border bg-surface/50 px-3 py-2 text-2xs leading-relaxed text-faint">
+          <span className="font-semibold text-up">Cloud account.</span> Your login and paper portfolio
+          are stored securely and sync to any device you sign in from.
+        </p>
+      ) : (
+        <p className="mt-6 rounded-lg border border-border bg-surface/50 px-3 py-2 text-2xs leading-relaxed text-faint">
+          <span className="font-semibold text-muted">Device-local account.</span> Helix has no server —
+          your account and paper portfolio are stored only in this browser (password salted &amp; hashed,
+          never sent anywhere). Clearing site data deletes the account.
+        </p>
+      )}
     </div>
   );
 }
@@ -27,16 +34,22 @@ function AuthForms() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError("");
+    setNotice("");
     const res =
       mode === "signup" ? await signUp(name, email, password) : await signIn(email, password);
     setBusy(false);
     if (!res.ok) setError(res.error ?? "Something went wrong.");
+    else if ("needsConfirm" in res && res.needsConfirm) {
+      setNotice("Almost there — check your email for a confirmation link, then sign in here.");
+      setMode("signin");
+    }
   };
 
   return (
@@ -49,6 +62,7 @@ function AuthForms() {
             onClick={() => {
               setMode(m);
               setError("");
+              setNotice("");
             }}
             className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
               mode === m ? "bg-primary text-white" : "text-muted hover:text-ink"
@@ -85,6 +99,11 @@ function AuthForms() {
         {error && (
           <p className="animate-fade-up rounded-lg border border-down/40 bg-down/10 px-3 py-2 text-xs text-down">
             {error}
+          </p>
+        )}
+        {notice && (
+          <p className="animate-fade-up rounded-lg border border-up/40 bg-up/10 px-3 py-2 text-xs text-up">
+            {notice}
           </p>
         )}
 
