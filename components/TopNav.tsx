@@ -19,7 +19,7 @@ export function TopNav() {
   const onSearch = (e: React.FormEvent) => {
     e.preventDefault();
     const term = q.trim();
-    if (term) window.location.href = `/radar?q=${encodeURIComponent(term.toUpperCase())}`;
+    if (term) window.location.href = `/stock/${encodeURIComponent(term.toUpperCase())}`;
   };
 
   return (

@@ -20,7 +20,7 @@ export function MarketPulse({ quotes }: { quotes: Quote[] }) {
           <span className="relative inline-flex h-2 w-2 rounded-full bg-up" />
         </span>
         <h2 className="text-sm font-semibold text-ink">Market Pulse — Top Movers</h2>
-        <span className="ml-auto text-2xs text-faint">tap a card to open in Radar</span>
+        <span className="ml-auto text-2xs text-faint">tap a card for news &amp; analysis</span>
       </header>
       <div className="scroll-thin flex gap-2 overflow-x-auto p-3">
         {movers.map((q) => {

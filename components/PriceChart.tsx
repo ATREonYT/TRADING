@@ -114,7 +114,7 @@ export function PriceChart({ ticker }: { ticker: string }) {
             className="flex items-center gap-1.5 rounded-md border border-border bg-elevated/60 px-2.5 py-1.5 text-2xs font-medium text-muted transition-colors hover:border-primary/50 hover:text-ink"
           >
             <Radar size={13} />
-            Open in Radar
+            News &amp; analysis
           </a>
           {ohlc && (
             <div className="hidden items-center gap-2 font-mono text-2xs text-muted md:flex tnum" aria-live="polite">

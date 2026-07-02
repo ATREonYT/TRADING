@@ -64,6 +64,17 @@ export const SYMBOL_CATALOG: CatalogEntry[] = [
   { symbol: "MATIC-USD", name: "Polygon", kind: "crypto" },
 ];
 
+/** Look up a catalog entry by symbol, tolerant of the -USD crypto suffix. */
+export function lookupSymbol(symbol: string): CatalogEntry {
+  const up = symbol.toUpperCase();
+  const found =
+    SYMBOL_CATALOG.find((e) => e.symbol === up) ??
+    SYMBOL_CATALOG.find((e) => e.symbol.replace(/-USD$/, "") === up.replace(/-USD$/, ""));
+  if (found) return found;
+  const isCrypto = /-USD$/.test(up);
+  return { symbol: up, name: up.replace(/-USD$/, ""), kind: isCrypto ? "crypto" : "equity" };
+}
+
 /** Simple case-insensitive subsequence/substring match, ranked. */
 export function searchCatalog(query: string, limit = 8): CatalogEntry[] {
   const q = query.trim().toLowerCase();

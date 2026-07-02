@@ -161,7 +161,7 @@ export function CommandPalette() {
                     <span className="ml-2 truncate text-2xs text-muted">{it.hint}</span>
                   </span>
                   <span className="text-2xs text-faint">
-                    {it.type === "symbol" ? "Open in Radar" : "Go"}
+                    {it.type === "symbol" ? "News & analysis" : "Go"}
                   </span>
                 </button>
               </li>

@@ -116,9 +116,10 @@ async function pooled<I, O>(items: I[], limit: number, fn: (i: I) => Promise<O>)
   return out;
 }
 
-// Short-lived in-memory cache: with dozens of feeds and ~20s client polling,
-// this collapses bursts (and multiple viewers) into one fetch cycle.
-let cache: { at: number; result: FetchResult } | null = null;
+// Short-lived in-memory cache, keyed so per-symbol fetches don't collide with
+// the global feed. With ~20s client polling this collapses bursts into one
+// fetch cycle.
+const cache = new Map<string, { at: number; result: FetchResult }>();
 const CACHE_MS = 15000;
 
 /** Fetch every feed with bounded concurrency; never throws — collects failures. */
@@ -126,8 +127,10 @@ export async function fetchAllFeeds(
   feeds: FeedSource[],
   timeoutMs = 8000,
   concurrency = 12,
+  cacheKey = "global",
 ): Promise<FetchResult> {
-  if (cache && Date.now() - cache.at < CACHE_MS) return cache.result;
+  const hit = cache.get(cacheKey);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.result;
 
   const settled = await pooled(feeds, concurrency, (f) => fetchOne(f, timeoutMs));
   const articles: RawArticle[] = [];
@@ -138,6 +141,6 @@ export async function fetchAllFeeds(
   });
   const result = { articles, failed };
   // Only cache a materially successful cycle so transient full failures retry.
-  if (articles.length > 0) cache = { at: Date.now(), result };
+  if (articles.length > 0) cache.set(cacheKey, { at: Date.now(), result });
   return result;
 }
