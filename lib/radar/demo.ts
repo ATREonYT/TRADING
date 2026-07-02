@@ -23,7 +23,7 @@ const RAW: RawArticle[] = [
 
 // Deterministic wobble (layered sines) so demo charts and analytics behave
 // like real, noisy price series — no Math.random, stable across SSR/CSR.
-const spark = (base: number, drift: number): number[] =>
+const sparkPath = (base: number, drift: number): number[] =>
   Array.from({ length: 30 }, (_, i) => {
     const trend = (drift * i) / 100 / 30;
     const noise =
@@ -33,17 +33,41 @@ const spark = (base: number, drift: number): number[] =>
     return +(base * (1 + trend + noise)).toFixed(2);
   });
 
+const spark = sparkPath;
+
+// Full OHLCV bars derived from the same close path: open = previous close,
+// high/low from deterministic intrabar wicks, volume pulses with the wicks.
+const demoCandles = (base: number, drift: number) => {
+  const closes = sparkPath(base, drift);
+  const now = Math.floor(Date.now() / 1000);
+  return closes.map((close, i) => {
+    const open = i === 0 ? close * 0.998 : closes[i - 1];
+    const hi = Math.max(open, close);
+    const lo = Math.min(open, close);
+    const wick = Math.abs(Math.sin(i * 2.3 + base)) * 0.006 + 0.002;
+    const volume = Math.round(1e6 * (1 + 0.6 * Math.abs(Math.sin(i * 1.3 + base % 5)) + (i > 24 ? 0.8 : 0)));
+    return {
+      time: now - (closes.length - 1 - i) * 86400,
+      open: +open.toFixed(2),
+      high: +(hi * (1 + wick)).toFixed(2),
+      low: +(lo * (1 - wick)).toFixed(2),
+      close,
+      volume,
+    };
+  });
+};
+
 const DEMO_QUOTES: Quote[] = [
-  { symbol: "NVDA", name: "Nvidia", kind: "equity", price: 132.4, changePct: 6.2, volumeRatio: 320, spark: spark(124, 6.2), currency: "USD", updatedAt: minsAgo(1) },
-  { symbol: "PLTR", name: "Palantir", kind: "equity", price: 41.8, changePct: 8.9, volumeRatio: 410, spark: spark(38, 8.9), currency: "USD", updatedAt: minsAgo(1) },
-  { symbol: "AMD", name: "AMD", kind: "equity", price: 168.2, changePct: 4.1, volumeRatio: 210, spark: spark(161, 4.1), currency: "USD", updatedAt: minsAgo(1) },
-  { symbol: "AAPL", name: "Apple", kind: "equity", price: 229.1, changePct: 1.8, volumeRatio: 140, spark: spark(225, 1.8), currency: "USD", updatedAt: minsAgo(1) },
-  { symbol: "TSLA", name: "Tesla", kind: "equity", price: 214.5, changePct: -5.4, volumeRatio: 280, spark: spark(226, -5.4), currency: "USD", updatedAt: minsAgo(1) },
-  { symbol: "BA", name: "Boeing", kind: "equity", price: 172.3, changePct: -3.6, volumeRatio: 190, spark: spark(178, -3.6), currency: "USD", updatedAt: minsAgo(1) },
-  { symbol: "COIN", name: "Coinbase", kind: "equity", price: 248.9, changePct: 5.7, volumeRatio: 260, spark: spark(235, 5.7), currency: "USD", updatedAt: minsAgo(1) },
-  { symbol: "BTC-USD", name: "Bitcoin", kind: "crypto", price: 68420, changePct: 4.8, volumeRatio: 230, spark: spark(65300, 4.8), currency: "USD", updatedAt: minsAgo(1) },
-  { symbol: "ETH-USD", name: "Ethereum", kind: "crypto", price: 3585, changePct: 5.9, volumeRatio: 250, spark: spark(3385, 5.9), currency: "USD", updatedAt: minsAgo(1) },
-  { symbol: "SOL-USD", name: "Solana", kind: "crypto", price: 178.4, changePct: 9.3, volumeRatio: 340, spark: spark(163, 9.3), currency: "USD", updatedAt: minsAgo(1) },
+  { symbol: "NVDA", name: "Nvidia", kind: "equity", price: 132.4, changePct: 6.2, volumeRatio: 320, spark: spark(124, 6.2), candles: demoCandles(124, 6.2), currency: "USD", updatedAt: minsAgo(1) },
+  { symbol: "PLTR", name: "Palantir", kind: "equity", price: 41.8, changePct: 8.9, volumeRatio: 410, spark: spark(38, 8.9), candles: demoCandles(38, 8.9), currency: "USD", updatedAt: minsAgo(1) },
+  { symbol: "AMD", name: "AMD", kind: "equity", price: 168.2, changePct: 4.1, volumeRatio: 210, spark: spark(161, 4.1), candles: demoCandles(161, 4.1), currency: "USD", updatedAt: minsAgo(1) },
+  { symbol: "AAPL", name: "Apple", kind: "equity", price: 229.1, changePct: 1.8, volumeRatio: 140, spark: spark(225, 1.8), candles: demoCandles(225, 1.8), currency: "USD", updatedAt: minsAgo(1) },
+  { symbol: "TSLA", name: "Tesla", kind: "equity", price: 214.5, changePct: -5.4, volumeRatio: 280, spark: spark(226, -5.4), candles: demoCandles(226, -5.4), currency: "USD", updatedAt: minsAgo(1) },
+  { symbol: "BA", name: "Boeing", kind: "equity", price: 172.3, changePct: -3.6, volumeRatio: 190, spark: spark(178, -3.6), candles: demoCandles(178, -3.6), currency: "USD", updatedAt: minsAgo(1) },
+  { symbol: "COIN", name: "Coinbase", kind: "equity", price: 248.9, changePct: 5.7, volumeRatio: 260, spark: spark(235, 5.7), candles: demoCandles(235, 5.7), currency: "USD", updatedAt: minsAgo(1) },
+  { symbol: "BTC-USD", name: "Bitcoin", kind: "crypto", price: 68420, changePct: 4.8, volumeRatio: 230, spark: spark(65300, 4.8), candles: demoCandles(65300, 4.8), currency: "USD", updatedAt: minsAgo(1) },
+  { symbol: "ETH-USD", name: "Ethereum", kind: "crypto", price: 3585, changePct: 5.9, volumeRatio: 250, spark: spark(3385, 5.9), candles: demoCandles(3385, 5.9), currency: "USD", updatedAt: minsAgo(1) },
+  { symbol: "SOL-USD", name: "Solana", kind: "crypto", price: 178.4, changePct: 9.3, volumeRatio: 340, spark: spark(163, 9.3), candles: demoCandles(163, 9.3), currency: "USD", updatedAt: minsAgo(1) },
 ];
 
 export function demoNews(): NewsItem[] {

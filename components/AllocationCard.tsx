@@ -5,7 +5,7 @@ import { ALLOCATION } from "@/lib/mockData";
 import { compactUsd, num } from "@/lib/format";
 
 // Distinct hues (not red/green — those are reserved for P&L semantics)
-const COLORS = ["#3B82F6", "#8B5CF6", "#06B6D4", "#F59E0B", "#EC4899", "#14B8A6"];
+const COLORS = ["#8B5CF6", "#22D3EE", "#EC4899", "#F59E0B", "#3B82F6", "#14B8A6"];
 
 function AllocTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null;

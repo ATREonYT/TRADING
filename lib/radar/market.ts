@@ -71,12 +71,19 @@ async function equityQuote(symbol: string): Promise<Quote | undefined> {
   const result = json?.chart?.result?.[0];
   if (!result) return undefined;
   const meta = result.meta ?? {};
-  const closes: number[] = (result.indicators?.quote?.[0]?.close ?? []).filter(
-    (v: number | null): v is number => typeof v === "number",
-  );
-  const vols: number[] = (result.indicators?.quote?.[0]?.volume ?? []).filter(
-    (v: number | null): v is number => typeof v === "number",
-  );
+  const q = result.indicators?.quote?.[0] ?? {};
+  const times: number[] = result.timestamp ?? [];
+
+  // Assemble full OHLCV bars, skipping any bar with a null field.
+  const candles: NonNullable<Quote["candles"]> = [];
+  for (let i = 0; i < times.length; i++) {
+    const [o, h, l, c, v] = [q.open?.[i], q.high?.[i], q.low?.[i], q.close?.[i], q.volume?.[i]];
+    if ([o, h, l, c].every((x) => typeof x === "number")) {
+      candles.push({ time: times[i], open: o, high: h, low: l, close: c, volume: v ?? 0 });
+    }
+  }
+  const closes = candles.map((k) => k.close);
+  const vols = candles.map((k) => k.volume);
   const price = meta.regularMarketPrice ?? closes[closes.length - 1];
   const prev = meta.chartPreviousClose ?? closes[closes.length - 2] ?? price;
   if (typeof price !== "number") return undefined;
@@ -91,6 +98,7 @@ async function equityQuote(symbol: string): Promise<Quote | undefined> {
     changePct: prev ? ((price - prev) / prev) * 100 : 0,
     volumeRatio: baseVol ? (lastVol / baseVol) * 100 : null,
     spark: closes.slice(-30),
+    candles: candles.slice(-60),
     currency: meta.currency ?? "USD",
     updatedAt: new Date().toISOString(),
   };
@@ -115,8 +123,16 @@ async function cryptoQuote(pair: string): Promise<Quote | undefined> {
     8000,
   );
   if (!Array.isArray(rows) || rows.length < 25) return undefined;
-  const closes = rows.map((k) => Number(k[4]));
-  const vols = rows.map((k) => Number(k[5]));
+  const candles = rows.map((k) => ({
+    time: Math.floor(Number(k[0]) / 1000),
+    open: Number(k[1]),
+    high: Number(k[2]),
+    low: Number(k[3]),
+    close: Number(k[4]),
+    volume: Number(k[5]),
+  }));
+  const closes = candles.map((k) => k.close);
+  const vols = candles.map((k) => k.volume);
   const price = closes[closes.length - 1];
   const prev24 = closes[closes.length - 25]; // 24h ago
   const base = pair.replace(/USDT$/, "");
@@ -130,6 +146,7 @@ async function cryptoQuote(pair: string): Promise<Quote | undefined> {
     changePct: prev24 ? ((price - prev24) / prev24) * 100 : 0,
     volumeRatio: baseVol ? (recentVol / baseVol) * 100 : null,
     spark: closes.slice(-30),
+    candles: candles.slice(-48),
     currency: "USD",
     updatedAt: new Date().toISOString(),
   };
@@ -151,8 +168,16 @@ async function okxQuote(pair: string): Promise<Quote | undefined> {
   const rows: string[][] = json?.data;
   if (!Array.isArray(rows) || rows.length < 25) return undefined;
   const asc = [...rows].reverse();
-  const closes = asc.map((k) => Number(k[4]));
-  const vols = asc.map((k) => Number(k[5]));
+  const candles = asc.map((k) => ({
+    time: Math.floor(Number(k[0]) / 1000),
+    open: Number(k[1]),
+    high: Number(k[2]),
+    low: Number(k[3]),
+    close: Number(k[4]),
+    volume: Number(k[5]),
+  }));
+  const closes = candles.map((k) => k.close);
+  const vols = candles.map((k) => k.volume);
   const price = closes[closes.length - 1];
   const prev24 = closes[closes.length - 25];
   const recentVol = avg(vols.slice(-6));
@@ -165,6 +190,7 @@ async function okxQuote(pair: string): Promise<Quote | undefined> {
     changePct: prev24 ? ((price - prev24) / prev24) * 100 : 0,
     volumeRatio: baseVol ? (recentVol / baseVol) * 100 : null,
     spark: closes.slice(-30),
+    candles: candles.slice(-48),
     currency: "USD",
     updatedAt: new Date().toISOString(),
   };

@@ -55,18 +55,18 @@ export function EquityCurveCard() {
           <AreaChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
             <defs>
               <linearGradient id="navFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#3B82F6" stopOpacity={0.35} />
-                <stop offset="100%" stopColor="#3B82F6" stopOpacity={0} />
+                <stop offset="0%" stopColor="#8B5CF6" stopOpacity={0.35} />
+                <stop offset="100%" stopColor="#8B5CF6" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid stroke="rgba(35,48,74,0.5)" vertical={false} />
+            <CartesianGrid stroke="rgba(39,35,82,0.55)" vertical={false} />
             <XAxis
               dataKey="time"
               tickFormatter={fmtMonth}
               minTickGap={40}
               tick={{ fill: "#64748B", fontSize: 11 }}
               tickLine={false}
-              axisLine={{ stroke: "#23304A" }}
+              axisLine={{ stroke: "#272352" }}
             />
             <YAxis
               orientation="right"
@@ -77,11 +77,11 @@ export function EquityCurveCard() {
               width={52}
               domain={["dataMin - 5000", "dataMax + 5000"]}
             />
-            <Tooltip content={<CurveTooltip />} cursor={{ stroke: "#3B82F6", strokeDasharray: "3 3" }} />
+            <Tooltip content={<CurveTooltip />} cursor={{ stroke: "#8B5CF6", strokeDasharray: "3 3" }} />
             <Area
               type="monotone"
               dataKey="value"
-              stroke="#3B82F6"
+              stroke="#8B5CF6"
               strokeWidth={2}
               fill="url(#navFill)"
               isAnimationActive={false}

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CATALYST_EXAMPLE } from "@/lib/landingData";
-import { AnimatedArea } from "./AnimatedArea";
+import { MiniCandles } from "./MiniCandles";
 import { HERO_PATH } from "@/lib/landingData";
 import { Zap } from "@/components/icons";
 
@@ -93,7 +93,7 @@ export function CatalystShowcase() {
               </div>
               <span className="tnum font-mono text-sm font-semibold text-up">+6.2%</span>
             </div>
-            <AnimatedArea data={HERO_PATH} height={190} color="#26A69A" />
+            <MiniCandles data={HERO_PATH} height={190} />
             <p className="mt-3 text-2xs leading-relaxed text-muted">
               <span className="font-semibold text-ink">Why it moves:</span> {CATALYST_EXAMPLE.steps[3].value}
             </p>

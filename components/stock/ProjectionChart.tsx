@@ -55,7 +55,7 @@ export function ProjectionChart({
       </defs>
 
       {/* now divider */}
-      <line x1={splitX} y1={pad} x2={splitX} y2={height - pad} stroke="#23304A" strokeWidth="1" strokeDasharray="3 4" />
+      <line x1={splitX} y1={pad} x2={splitX} y2={height - pad} stroke="#272352" strokeWidth="1" strokeDasharray="3 4" />
 
       {/* history */}
       <path d={histPath} fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />

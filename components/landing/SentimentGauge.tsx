@@ -59,7 +59,7 @@ export function SentimentGauge() {
         <path
           d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`}
           fill="none"
-          stroke="#23304A"
+          stroke="#272352"
           strokeWidth="14"
           strokeLinecap="round"
         />

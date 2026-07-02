@@ -18,7 +18,7 @@ export default function OpengraphImage() {
           flexDirection: "column",
           justifyContent: "space-between",
           padding: 72,
-          background: "linear-gradient(135deg, #0B1428 0%, #070A12 60%, #0A2020 100%)",
+          background: "linear-gradient(135deg, #17112E 0%, #07060E 60%, #0A2026 100%)",
           color: "#F8FAFC",
           fontFamily: "sans-serif",
         }}
@@ -29,7 +29,7 @@ export default function OpengraphImage() {
               width: 64,
               height: 64,
               borderRadius: 16,
-              background: "linear-gradient(135deg, #3B82F6, #1E40AF)",
+              background: "linear-gradient(135deg, #8B5CF6, #5B21B6)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -46,8 +46,8 @@ export default function OpengraphImage() {
               marginLeft: 12,
               padding: "6px 16px",
               borderRadius: 999,
-              border: "1px solid #23304A",
-              color: "#94A3B8",
+              border: "1px solid #272352",
+              color: "#A0A3C4",
               fontSize: 20,
             }}
           >
@@ -59,7 +59,7 @@ export default function OpengraphImage() {
           <div style={{ fontSize: 70, fontWeight: 800, lineHeight: 1.05, maxWidth: 940 }}>
             Trade the news before it moves the tape.
           </div>
-          <div style={{ fontSize: 30, color: "#94A3B8", maxWidth: 900 }}>
+          <div style={{ fontSize: 30, color: "#A0A3C4", maxWidth: 900 }}>
             Live news from 65+ sources. Catalyst analysis. Full-market scanner.
           </div>
         </div>
@@ -72,9 +72,9 @@ export default function OpengraphImage() {
                 display: "flex",
                 padding: "10px 22px",
                 borderRadius: 12,
-                background: "#161F30",
-                border: "1px solid #23304A",
-                color: "#CBD5E1",
+                background: "#161430",
+                border: "1px solid #272352",
+                color: "#C4C6E0",
                 fontSize: 24,
               }}
             >

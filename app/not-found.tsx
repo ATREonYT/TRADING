@@ -12,7 +12,7 @@ export default function NotFound() {
         <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-primary to-primary-deep shadow-glow">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M5 16c3-1 4-9 7-9s2 6 5 6" stroke="white" strokeWidth="2" strokeLinecap="round" />
-            <circle cx="5" cy="16" r="1.6" fill="#F59E0B" />
+            <circle cx="5" cy="16" r="1.6" fill="#22D3EE" />
           </svg>
         </div>
         <div className="font-mono text-5xl font-bold text-gradient">404</div>

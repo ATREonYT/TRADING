@@ -8,20 +8,20 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Dark Mode (OLED) surfaces — deep slate, layered elevation
-        base: "#070A12",
-        surface: "#0F1623",
-        elevated: "#161F30",
-        overlay: "#1C283B",
-        border: "#23304A",
+        // Dark Mode (OLED) surfaces — deep violet-tinted night, layered elevation
+        base: "#07060E",
+        surface: "#0E0D1C",
+        elevated: "#161430",
+        overlay: "#1D1A3E",
+        border: "#272352",
         // Text
-        ink: "#F8FAFC",
-        muted: "#94A3B8",
-        faint: "#64748B",
-        // Brand (fintech blue + amber accent)
-        primary: "#3B82F6",
-        "primary-deep": "#1E40AF",
-        accent: "#F59E0B",
+        ink: "#F4F4FB",
+        muted: "#A0A3C4",
+        faint: "#6B6E96",
+        // Brand (electric violet + cyan accent)
+        primary: "#8B5CF6",
+        "primary-deep": "#5B21B6",
+        accent: "#22D3EE",
         // Market semantics (TradingView-aligned, colorblind-safe via fill/outline)
         up: "#26A69A",
         down: "#EF5350",
@@ -36,7 +36,7 @@ const config: Config = {
       },
       boxShadow: {
         card: "0 1px 0 0 rgba(255,255,255,0.03) inset, 0 8px 24px -12px rgba(0,0,0,0.6)",
-        glow: "0 0 12px -2px rgba(59,130,246,0.5)",
+        glow: "0 0 14px -2px rgba(139,92,246,0.55)",
       },
       keyframes: {
         "fade-up": {

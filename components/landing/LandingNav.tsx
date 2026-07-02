@@ -35,7 +35,7 @@ export function LandingNav() {
           <span className="grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-br from-primary to-primary-deep shadow-glow">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M5 16c3-1 4-9 7-9s2 6 5 6" stroke="white" strokeWidth="2" strokeLinecap="round" />
-              <circle cx="5" cy="16" r="1.6" fill="#F59E0B" />
+              <circle cx="5" cy="16" r="1.6" fill="#22D3EE" />
             </svg>
           </span>
           <span className="font-mono text-[15px] font-semibold tracking-tight text-ink">HELIX</span>

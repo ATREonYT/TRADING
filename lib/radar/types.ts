@@ -41,6 +41,16 @@ export interface NewsItem {
   breaking: boolean;
 }
 
+export interface Ohlcv {
+  /** unix seconds */
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
 export interface Quote {
   symbol: string;
   name: string;
@@ -51,6 +61,8 @@ export interface Quote {
   volumeRatio: number | null;
   /** Recent close prices, oldest -> newest, for a sparkline */
   spark: number[];
+  /** Full OHLCV bars, oldest -> newest, for candlestick charts */
+  candles?: Ohlcv[];
   currency: string;
   updatedAt: string;
 }

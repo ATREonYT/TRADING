@@ -131,7 +131,7 @@ function ScoreDial({ score }: { score: number }) {
   return (
     <div className="relative grid h-10 w-10 shrink-0 place-items-center">
       <svg width="40" height="40" viewBox="0 0 40 40" className="-rotate-90">
-        <circle cx="20" cy="20" r={r} fill="none" stroke="#23304A" strokeWidth="4" />
+        <circle cx="20" cy="20" r={r} fill="none" stroke="#272352" strokeWidth="4" />
         <circle
           cx="20"
           cy="20"

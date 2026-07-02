@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { NewsItem, Quote, Signal } from "@/lib/radar/types";
 import type { Indicators, Projection, HiddenSignal } from "@/lib/radar/analytics";
 import { AnimatedArea } from "@/components/landing/AnimatedArea";
+import { CandleChart } from "./CandleChart";
 import { ProjectionChart } from "./ProjectionChart";
 import { relTime, sentimentBg, directionArrow, CATEGORY_LABEL, leanBg } from "@/components/radar/helpers";
 import { Radar, Refresh, Zap, External, ArrowUp, ArrowDown, Newspaper } from "@/components/icons";
@@ -197,13 +198,17 @@ export function StockView({ symbol }: { symbol: string }) {
 
       {/* Chart + analytics */}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-        {/* Price chart */}
+        {/* Price chart — candles with volume + moving averages */}
         <div className="glossy rounded-2xl p-5">
           <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-ink">Price · recent</h2>
+            <h2 className="text-sm font-semibold text-ink">
+              Price action · {data?.kind === "crypto" ? "hourly" : "daily"} candles
+            </h2>
             {q && <span className={`tnum text-2xs font-semibold ${dirClass(q.changePct)}`}>{pct(q.changePct)}</span>}
           </div>
-          {q && q.spark.length > 1 ? (
+          {q?.candles && q.candles.length > 5 ? (
+            <CandleChart candles={q.candles} height={300} />
+          ) : q && q.spark.length > 1 ? (
             <AnimatedArea data={q.spark} height={220} color={up ? "#26A69A" : "#EF5350"} />
           ) : (
             <div className="grid h-[220px] place-items-center text-sm text-faint">

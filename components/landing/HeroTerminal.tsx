@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AnimatedArea } from "./AnimatedArea";
+import { MiniCandles } from "./MiniCandles";
 import { HERO_PATH } from "@/lib/landingData";
 import { num } from "@/lib/format";
 
@@ -57,7 +57,7 @@ export function HeroTerminal() {
           </div>
 
           <div className="mt-3">
-            <AnimatedArea data={HERO_PATH} height={150} color="#26A69A" />
+            <MiniCandles data={HERO_PATH} height={150} />
           </div>
 
           {/* mini catalyst readout */}
