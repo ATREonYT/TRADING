@@ -1,13 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { searchCatalog } from "@/lib/symbolCatalog";
-import { radarLink } from "@/lib/radar/symbolLink";
+import { useSymbolSearch, stockHref } from "./useSymbolSearch";
 import { Search, Radar, Grid, Candles } from "./icons";
 
 type Item =
   | { type: "action"; id: string; label: string; hint: string; href: string; icon: "home" | "dashboard" | "radar" }
-  | { type: "symbol"; id: string; label: string; hint: string; href: string; kind: "equity" | "crypto" };
+  | { type: "symbol"; id: string; label: string; hint: string; href: string; kind: string; exchange?: string };
 
 const ACTIONS: Item[] = [
   { type: "action", id: "home", label: "Home", hint: "Landing page", href: "/", icon: "home" },
@@ -28,21 +27,24 @@ export function CommandPalette() {
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const { results } = useSymbolSearch(q, 8);
+
   const items = useMemo<Item[]>(() => {
     const query = q.trim();
-    const symbols: Item[] = searchCatalog(query, 8).map((e) => ({
+    const symbols: Item[] = results.map((e) => ({
       type: "symbol",
-      id: e.symbol,
+      id: `${e.symbol}-${e.exchange}`,
       label: e.symbol,
       hint: e.name,
-      href: radarLink(e.symbol),
+      href: stockHref(e),
       kind: e.kind,
+      exchange: e.exchange,
     }));
     const actions = query
       ? ACTIONS.filter((a) => a.label.toLowerCase().includes(query.toLowerCase()))
       : ACTIONS;
     return [...actions, ...symbols];
-  }, [q]);
+  }, [q, results]);
 
   const close = useCallback(() => {
     setOpen(false);
@@ -125,7 +127,7 @@ export function CommandPalette() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={onListKey}
-            placeholder="Search symbols or jump to a page…"
+            placeholder="Company, ticker, or page… (all exchanges)"
             className="w-full bg-transparent text-sm text-ink placeholder:text-faint focus:outline-none"
             aria-label="Search"
           />
@@ -163,7 +165,7 @@ export function CommandPalette() {
                     <span className="ml-2 truncate text-2xs text-muted">{it.hint}</span>
                   </span>
                   <span className="text-2xs text-faint">
-                    {it.type === "symbol" ? "News & analysis" : "Go"}
+                    {it.type === "symbol" ? (it.exchange || "News & analysis") : "Go"}
                   </span>
                 </button>
               </li>

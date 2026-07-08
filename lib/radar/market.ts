@@ -99,6 +99,7 @@ async function equityQuote(symbol: string): Promise<Quote | undefined> {
     volumeRatio: baseVol ? (lastVol / baseVol) * 100 : null,
     spark: closes.slice(-30),
     candles: candles.slice(-60),
+    exchange: meta.fullExchangeName ?? meta.exchangeName ?? undefined,
     currency: meta.currency ?? "USD",
     updatedAt: new Date().toISOString(),
   };

@@ -63,6 +63,8 @@ export interface Quote {
   spark: number[];
   /** Full OHLCV bars, oldest -> newest, for candlestick charts */
   candles?: Ohlcv[];
+  /** Listing exchange, e.g. "NasdaqGS", "HKSE" (when known) */
+  exchange?: string;
   currency: string;
   updatedAt: string;
 }

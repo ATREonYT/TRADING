@@ -43,8 +43,15 @@ interface StockPayload {
 }
 
 export async function GET(req: Request): Promise<NextResponse<StockPayload>> {
-  const raw = (new URL(req.url).searchParams.get("symbol") ?? "").toUpperCase().slice(0, 20);
-  const { symbol, name, kind } = lookupSymbol(raw);
+  const params = new URL(req.url).searchParams;
+  const raw = (params.get("symbol") ?? "").toUpperCase().slice(0, 20);
+  // Optional display name from global search — makes news catering work for
+  // symbols outside the built-in catalog (e.g. 9988.HK → "Alibaba Group").
+  const nameParam = (params.get("name") ?? "").replace(/[^\w\s.&'-]/g, "").trim().slice(0, 60);
+  const looked = lookupSymbol(raw);
+  const symbol = looked.symbol;
+  const kind = looked.kind;
+  const name = nameParam || looked.name;
   // Reject anything that isn't a plain ticker before it reaches upstream URLs.
   if (!isValidSymbol(symbol)) {
     return NextResponse.json(

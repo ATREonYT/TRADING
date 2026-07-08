@@ -10,6 +10,8 @@ import { TradeTicket } from "./TradeTicket";
 import { relTime, sentimentBg, directionArrow, CATEGORY_LABEL, leanBg } from "@/components/radar/helpers";
 import { Radar, Refresh, Zap, External, ArrowUp, ArrowDown, Newspaper } from "@/components/icons";
 import { usd, num, pct, dirClass } from "@/lib/format";
+import { stockHref } from "@/components/useSymbolSearch";
+import type { SearchResult } from "@/lib/radar/search";
 
 interface StockData {
   ok: boolean;
@@ -27,14 +29,16 @@ interface StockData {
   notes: string[];
 }
 
-export function StockView({ symbol }: { symbol: string }) {
+export function StockView({ symbol, displayName }: { symbol: string; displayName?: string }) {
   const [data, setData] = useState<StockData | null>(null);
   const [loading, setLoading] = useState(true);
   const [openWhy, setOpenWhy] = useState<Set<string>>(new Set());
+  const [listings, setListings] = useState<SearchResult[]>([]);
 
   const load = useCallback(async () => {
     try {
-      const r = await fetch(`/api/radar/stock?symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" });
+      const nameQ = displayName ? `&name=${encodeURIComponent(displayName)}` : "";
+      const r = await fetch(`/api/radar/stock?symbol=${encodeURIComponent(symbol)}${nameQ}`, { cache: "no-store" });
       const j = (await r.json()) as StockData;
       setData(j);
     } catch {
@@ -42,7 +46,7 @@ export function StockView({ symbol }: { symbol: string }) {
     } finally {
       setLoading(false);
     }
-  }, [symbol]);
+  }, [symbol, displayName]);
 
   useEffect(() => {
     load();
@@ -51,6 +55,27 @@ export function StockView({ symbol }: { symbol: string }) {
     }, 30000);
     return () => clearInterval(id);
   }, [load]);
+
+  // Other listings of the same company on different exchanges (HKEX/NYSE/...).
+  useEffect(() => {
+    const name = displayName ?? data?.name;
+    if (!name || name === symbol) return;
+    let active = true;
+    fetch(`/api/radar/search?q=${encodeURIComponent(name)}`, { cache: "no-store" })
+      .then((r) => r.json() as Promise<{ items: SearchResult[] }>)
+      .then((j) => {
+        if (!active || !Array.isArray(j.items)) return;
+        const others = j.items.filter(
+          (it) => it.symbol !== symbol && it.kind !== "crypto" && it.exchange,
+        );
+        setListings(others.slice(0, 4));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol, displayName, data?.name]);
 
   const toggleWhy = (id: string) =>
     setOpenWhy((p) => {
@@ -117,11 +142,32 @@ export function StockView({ symbol }: { symbol: string }) {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="font-mono text-2xl font-bold text-ink">{symbol}</h1>
+                {q?.exchange && (
+                  <span className="rounded bg-primary/10 px-1.5 py-0.5 text-2xs font-semibold text-primary ring-1 ring-primary/30">
+                    {q.exchange}
+                  </span>
+                )}
                 {data?.kind === "crypto" && (
                   <span className="rounded bg-elevated px-1.5 py-0.5 text-2xs text-faint">crypto</span>
                 )}
               </div>
-              <div className="text-sm text-muted">{data?.name ?? symbol}</div>
+              <div className="text-sm text-muted">{displayName ?? data?.name ?? symbol}</div>
+              {listings.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  <span className="text-2xs text-faint">Also listed:</span>
+                  {listings.map((l) => (
+                    <a
+                      key={`${l.symbol}-${l.exchange}`}
+                      href={stockHref(l)}
+                      className="flex items-center gap-1 rounded-full border border-border bg-elevated/60 px-2 py-0.5 text-2xs font-medium text-muted transition-colors hover:border-primary/50 hover:text-ink"
+                      title={`Switch to ${l.symbol} on ${l.exchange}`}
+                    >
+                      <span className="font-mono font-semibold text-ink">{l.symbol}</span>
+                      {l.exchange}
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
