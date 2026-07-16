@@ -26,7 +26,19 @@ export interface PlayerProfile {
   id: string; // stable local uuid, persisted
   name: string;
   look: AvatarLook;
+  /** Short status line shown under the name label, e.g. "raising seed". <= 40 chars. */
+  status?: string;
 }
+
+/** One-key reactions, rendered as a pop bubble above the avatar. */
+export type EmoteKind = "wave" | "laugh" | "clap" | "heart" | "question";
+export const EMOTES: { kind: EmoteKind; char: string; label: string; key: string }[] = [
+  { kind: "wave", char: "👋", label: "Wave", key: "1" },
+  { kind: "laugh", char: "😂", label: "Laugh", key: "2" },
+  { kind: "clap", char: "👏", label: "Clap", key: "3" },
+  { kind: "heart", char: "❤️", label: "Heart", key: "4" },
+  { kind: "question", char: "❓", label: "Question", key: "5" },
+];
 
 // ---------- ranks ----------
 
@@ -156,10 +168,32 @@ export interface RemotePlayer {
   name: string;
   look: AvatarLook;
   s: MoveState;
+  status?: string;
+}
+
+/** A guestbook entry left at a booth. */
+export interface GuestbookEntry {
+  from: string; // display name
+  text: string;
+  ts: number;
+}
+
+/** One line in the floor's ambient activity ticker. */
+export interface ActivityItem {
+  id: string;
+  text: string; // pre-rendered, e.g. `Ada claimed a stand` / `Grace signed Soup Ticket's guestbook`
+  ts: number;
 }
 
 export type NetEvent =
-  | { t: "welcome"; selfId: string; players: RemotePlayer[]; booths: RemoteBooth[] }
+  | {
+      t: "welcome";
+      selfId: string;
+      players: RemotePlayer[];
+      booths: RemoteBooth[];
+      /** Recent ticker items for this floor, oldest first. */
+      activity: ActivityItem[];
+    }
   | { t: "player_join"; player: RemotePlayer }
   | { t: "player_move"; id: string; s: MoveState }
   | { t: "player_leave"; id: string }
@@ -167,6 +201,12 @@ export type NetEvent =
   | { t: "booth_clear"; ownerId: string }
   /** Sent only to a claimant whose spot was already taken. */
   | { t: "booth_denied"; spotIndex: number }
+  /** A player fired a reaction; also echoed to the sender. */
+  | { t: "emote"; id: string; kind: EmoteKind }
+  /** A new guestbook entry landed at a booth (broadcast to the floor). */
+  | { t: "guestbook"; key: string; entry: GuestbookEntry }
+  /** One new ticker line (broadcast to the floor). */
+  | { t: "activity"; item: ActivityItem }
   | { t: "chat"; msg: ChatMsg }
   | { t: "status"; online: boolean; count: number };
 
@@ -193,19 +233,43 @@ export interface NetClient {
   sendBoothSet(claim: BoothClaim): void;
   /** Pack up this player's stand; the server relays booth_clear to the room. */
   sendBoothClear(): void;
+  /** Fire a reaction; the server broadcasts it (echo included). */
+  sendEmote(kind: EmoteKind): void;
+  /** Sign a booth's guestbook. key = `${spotIndex}` for claimed stands, or the startup id for seed booths. */
+  sendSign(key: string, text: string): void;
   /** Subscribe to events; returns an unsubscribe function. */
   on(cb: (ev: NetEvent) => void): () => void;
 }
 
+/**
+ * The floor server also speaks HTTP on the same port (CORS: *):
+ *   GET /presence            -> { floors: Record<floorId, number> }
+ *   GET /guestbook?floor=ID&key=KEY -> { entries: GuestbookEntry[] } (newest first, <= 50)
+ * lib/net.ts exports `httpBase(): string` returning e.g. "http://host:3001"
+ * (derived the same way as the ws URL; usable only in the browser).
+ */
+
 // ---------- game engine ----------
+
+/** What the pointer is over, for the hover card. Screen coords are CSS px in the canvas. */
+export type HoverTarget =
+  | { kind: "player"; id: string; name: string; status?: string; x: number; y: number }
+  | { kind: "npc"; startupId: string; name: string; x: number; y: number }
+  | { kind: "booth"; booth: BoothInstance; x: number; y: number };
 
 export interface GameCallbacks {
   /** Fired when the player enters/leaves a booth's interaction zone (null = left). */
   onNearBooth(b: BoothInstance | null): void;
-  /** Fired when the player presses E/Enter or clicks the nearby booth. */
+  /** Fired when the player presses E/Enter or clicks/taps the nearby booth. */
   onInteract(b: BoothInstance): void;
   /** Presence updates for the HUD. count includes yourself; online = ws connected. */
   onPresence(count: number, online: boolean): void;
+  /** Pointer hover target changed (throttled; null = nothing hovered). */
+  onHover?(target: HoverTarget | null): void;
+  /** A remote player's avatar was clicked/tapped (open a DM with them). */
+  onPlayerClick?(player: { id: string; name: string }): void;
+  /** First-session progress: fired once per action kind ("move" | "talk" | "emote"). */
+  onFirstAction?(kind: "move" | "talk" | "emote"): void;
 }
 
 export interface GameOptions {
@@ -218,6 +282,11 @@ export interface GameOptions {
   myClaim?: BoothClaim;
   /** All startups by id (seed data + the user's own). */
   startups: Record<string, Startup>;
+  /**
+   * Ambient chatter per startup id: short in-voice lines their NPC founder
+   * occasionally says in a bubble, so quiet floors still read as inhabited.
+   */
+  idleLines?: Record<string, string[]>;
   net: NetClient;
   cb: GameCallbacks;
 }
@@ -234,6 +303,16 @@ export interface GameHandle {
   setInputEnabled(v: boolean): void;
   /** Update the local player's stand (claim, move, or null = pack up) and rebuild the floor. */
   setMyBooth(claim: BoothClaim | null): void;
+  /** Fire a reaction: renders the bubble locally AND sends it over the wire. */
+  emote(kind: EmoteKind): void;
+  /**
+   * Show a chat bubble above an entity. entityId: "me", a remote player's wire
+   * id, or "npc:<startupId>". The UI calls this for its own sends and NPC
+   * replies; the engine shows remote players' floor chat automatically.
+   */
+  showBubble(entityId: string, text: string): void;
+  /** Toggle the minimap overlay (also bound to the M key in-game). */
+  setMinimap(v: boolean): void;
 }
 
 // ---------- client persistence (lib/store.ts) ----------
@@ -244,7 +323,13 @@ export interface Connection {
   founder?: string;
   ts: number;
   floorId: string;
+  /** Personal note ("met at demo night, follow up re: pricing"). */
+  note?: string;
 }
+
+/** First-session checklist steps. */
+export type OnboardingStep = "move" | "talk" | "emote" | "connect";
+export const ONBOARDING_STEPS: OnboardingStep[] = ["move", "talk", "emote", "connect"];
 
 export interface AppState {
   profile: PlayerProfile;
@@ -253,6 +338,10 @@ export interface AppState {
   myStartup?: Startup;
   /** Claimed stand per floor: floorId -> boothSpots index. */
   claims: Record<string, number>;
+  /** Completed first-session steps. */
+  onboarding: OnboardingStep[];
+  /** Earned badge ids (e.g. "first-steps", "demo-night"). */
+  badges: string[];
 }
 
 export const TILE = 32; // px per tile — single source of truth
