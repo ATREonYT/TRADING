@@ -135,6 +135,105 @@ export function formatOpenTrades(
   return `<b>Open paper-trades</b>\n` + rows.join("\n");
 }
 
+/**
+ * Short risk notice appended to EVERY subscriber-facing (channel) message.
+ * Keep it on every message — a disclaimer only helps if the reader actually saw
+ * it next to the content they acted on, not buried in a pinned post from months ago.
+ */
+export const DISCLAIMER_FOOTER =
+  `\n—\n<i>⚠️ Educational information, not financial advice. Signals are automated ` +
+  `momentum heuristics and frequently fail. You alone are responsible for your trades ` +
+  `and can lose everything you risk. Full terms: /disclaimer</i>`;
+
+/** Full disclaimer for /disclaimer and for pinning in the channel. */
+export function formatDisclaimer(serviceName: string): string {
+  return [
+    `⚠️ <b>${esc(serviceName)} — Risk Disclaimer &amp; Terms of Use</b>`,
+    ``,
+    `<b>1. Not financial advice.</b> Everything posted here — signals, digests, scores, ` +
+      `commentary — is automated, general, impersonal market information provided for ` +
+      `educational purposes only. Nothing here is investment advice, a recommendation, or ` +
+      `a solicitation to buy or sell any asset. We are not a broker, investment adviser, or fiduciary, ` +
+      `and no client or advisory relationship is created by subscribing.`,
+    ``,
+    `<b>2. High risk.</b> Trading cryptocurrencies (especially momentum/"pump" events and ` +
+      `leveraged futures) is extremely high risk. Signals detect moves that are already ` +
+      `underway and frequently reverse. Many signals lose money. You can lose your entire stake, ` +
+      `and with leverage, more than your stake.`,
+    ``,
+    `<b>3. No guarantees.</b> Past performance — including any win-rate statistics we publish — ` +
+      `does not predict future results. Win-rate figures are hypothetical paper-tracked outcomes, ` +
+      `not real fills, and overstate what a real trader would achieve after fees, slippage, and delay.`,
+    ``,
+    `<b>4. Your decisions, your responsibility.</b> Any trade you make is your own decision, ` +
+      `made at your own risk, based on your own research. Never trade money you cannot afford to lose. ` +
+      `By reading or acting on any content here, you agree that the operators of this service have no ` +
+      `liability for your trading results, to the maximum extent permitted by law.`,
+    ``,
+    `<b>5. Data may be wrong.</b> Prices, volumes and scores come from third-party exchange APIs ` +
+      `and automated heuristics; they can be delayed, incomplete, or simply incorrect.`,
+    ``,
+    `<b>6. No personalized advice.</b> We do not provide one-on-one trade recommendations, manage ` +
+      `funds, or tailor anything to your personal situation. Do not ask; consult a licensed financial ` +
+      `adviser in your jurisdiction instead.`,
+    ``,
+    `<i>By remaining in this channel and/or using this bot you acknowledge and accept these terms in full.</i>`,
+  ].join("\n");
+}
+
+/** Daily digest posted to the subscriber channel — the "newsletter". */
+export function formatDigest(d: {
+  serviceName: string;
+  dateUtc: string;
+  signalsToday: number;
+  bestToday?: { symbol: string; score: number; windowChangePct: number };
+  perf: {
+    closed: number;
+    wins: number;
+    winRate: number;
+    avgFinalPct: number;
+    targetPct: number;
+    stopPct: number;
+  };
+  horizonMin: number;
+  movers: TickerLite[];
+}): string {
+  const lines = [`📰 <b>${esc(d.serviceName)} — Daily Digest</b> · ${esc(d.dateUtc)} (UTC)`, ``];
+
+  lines.push(`⚡ Signals in the last 24h: <b>${d.signalsToday}</b>`);
+  if (d.bestToday) {
+    const base = d.bestToday.symbol.split("/")[0] ?? d.bestToday.symbol;
+    lines.push(
+      `Strongest: <b>${esc(base)}</b> (score ${d.bestToday.score}/100, ` +
+        `${d.bestToday.windowChangePct >= 0 ? "+" : ""}${d.bestToday.windowChangePct}% trigger move)`,
+    );
+  }
+
+  lines.push(``);
+  if (d.perf.closed > 0) {
+    lines.push(
+      `📈 <b>Track record</b> (hypothetical, paper-tracked)`,
+      `Win rate: <b>${d.perf.winRate}%</b> (${d.perf.wins}/${d.perf.closed} hit +${d.perf.targetPct}% ` +
+        `before −${d.perf.stopPct}% within ${d.horizonMin}m)`,
+      `Avg result at ${d.horizonMin}m: ${sign(d.perf.avgFinalPct)}`,
+    );
+  } else {
+    lines.push(`📈 <b>Track record</b>: not enough closed signals yet — stats appear as they accumulate.`);
+  }
+
+  if (d.movers.length) {
+    lines.push(``, `🌍 <b>Top movers (24h)</b>`);
+    for (const [i, m] of d.movers.entries()) {
+      lines.push(
+        `${i + 1}. ${m.percentage >= 0 ? "🟢" : "🔴"} <b>${esc(m.symbol)}</b> ` +
+          `${m.percentage >= 0 ? "+" : ""}${m.percentage.toFixed(2)}% · ${fmtCompact(m.quoteVolume)}`,
+      );
+    }
+  }
+
+  return lines.join("\n") + DISCLAIMER_FOOTER;
+}
+
 export function formatTopMovers(movers: TickerLite[]): string {
   if (!movers.length) return "No liquid movers right now.";
   const rows = movers.map((m, i) => {

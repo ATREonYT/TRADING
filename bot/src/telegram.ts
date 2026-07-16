@@ -21,12 +21,19 @@ export type InlineButton = { text: string; url: string };
 export class TelegramBot {
   private offset = 0;
   private polling = false;
-  private handlers = new Map<string, CommandHandler>();
+  private handlers = new Map<string, { fn: CommandHandler; adminOnly: boolean }>();
   /** Chats that have interacted with the bot — auto-captured broadcast targets. */
   private knownChats = new Set<string>();
+  /** When true (public/channel mode), only the admin chat gets broadcasts and control commands. */
+  private lockToAdmin: boolean;
 
-  constructor(private token: string, private defaultChatId: string) {
+  constructor(private token: string, private defaultChatId: string, opts?: { lockToAdmin?: boolean }) {
     if (defaultChatId) this.knownChats.add(defaultChatId);
+    this.lockToAdmin = opts?.lockToAdmin ?? false;
+  }
+
+  isAdmin(chatId: number | string): boolean {
+    return String(chatId) === this.defaultChatId;
   }
 
   private url(method: string) {
@@ -104,8 +111,8 @@ export class TelegramBot {
     }
   }
 
-  on(command: string, handler: CommandHandler): this {
-    this.handlers.set(command.toLowerCase(), handler);
+  on(command: string, handler: CommandHandler, opts?: { adminOnly?: boolean }): this {
+    this.handlers.set(command.toLowerCase(), { fn: handler, adminOnly: opts?.adminOnly ?? false });
     return this;
   }
 
@@ -151,8 +158,11 @@ export class TelegramBot {
   private async dispatch(u: TgUpdate): Promise<void> {
     const msg = u.message;
     if (!msg?.text) return;
-    // Remember this chat so it receives auto-alerts (no env var needed).
-    this.knownChats.add(String(msg.chat.id));
+    const admin = this.isAdmin(msg.chat.id);
+    // Remember this chat so it receives auto-alerts (no env var needed) — but in
+    // public/channel mode only the admin chat may join the broadcast list, so
+    // strangers DMing the bot don't get the paid signal feed for free.
+    if (!this.lockToAdmin || admin) this.knownChats.add(String(msg.chat.id));
     const text = msg.text.trim();
     if (!text.startsWith("/")) return;
     // "/set@MyBot key val" -> cmd "set", args ["key","val"]
@@ -163,8 +173,12 @@ export class TelegramBot {
       await this.send(`Unknown command /${cmd}. Try /help`, msg.chat.id);
       return;
     }
+    if (handler.adminOnly && !admin) {
+      await this.send(`This command is restricted to the bot operator.`, msg.chat.id);
+      return;
+    }
     try {
-      const reply = await handler(args, msg.chat.id);
+      const reply = await handler.fn(args, msg.chat.id);
       if (reply) await this.send(reply, msg.chat.id);
     } catch (err) {
       await this.send(`Error: ${(err as Error).message}`, msg.chat.id);

@@ -41,6 +41,12 @@ export interface Thresholds {
 export interface Config {
   telegramToken: string;
   chatId: string;
+  /** Public/subscriber channel id (e.g. "-100123..."). Empty = admin-only mode. */
+  channelId: string;
+  /** UTC hour (0-23) to post the daily digest to the channel. -1 = off. */
+  digestHourUtc: number;
+  /** Display name used in subscriber-facing messages and the disclaimer. */
+  serviceName: string;
   exchange: string;
   quote: string;
   /** "spot" or "swap" (linear USDT perpetual futures). */
@@ -72,6 +78,9 @@ export function loadConfig(): Config {
   return {
     telegramToken: envStr("TELEGRAM_BOT_TOKEN", ""),
     chatId: envStr("TELEGRAM_CHAT_ID", ""),
+    channelId: envStr("TELEGRAM_CHANNEL_ID", ""),
+    digestHourUtc: envNum("DIGEST_HOUR_UTC", 20),
+    serviceName: envStr("SERVICE_NAME", "Pump Scanner"),
     exchange: envStr("EXCHANGE", "binance"),
     quote: envStr("QUOTE_CURRENCY", "USDT"),
     marketType: envStr("MARKET_TYPE", "spot").toLowerCase() === "swap" ? "swap" : "spot",

@@ -7,26 +7,58 @@ import {
   formatRiskReport,
   formatPerformance,
   formatOpenTrades,
+  formatDisclaimer,
+  formatDigest,
+  DISCLAIMER_FOOTER,
 } from "./format.js";
 import { log } from "./logger.js";
 
 const cfg = loadConfig();
 const runOnce = process.argv.includes("--once");
+const channelMode = cfg.channelId !== "";
 
-const bot = new TelegramBot(cfg.telegramToken, cfg.chatId);
+// In channel (subscriber) mode, lock broadcasts + control commands to the admin
+// chat so random DMs can't reconfigure the bot or receive the paid feed for free.
+const bot = new TelegramBot(cfg.telegramToken, cfg.chatId, { lockToAdmin: channelMode });
+
+// Rolling 24h stats for the daily digest.
+const daily = {
+  signals: 0,
+  best: undefined as undefined | { symbol: string; score: number; windowChangePct: number },
+  reset() {
+    this.signals = 0;
+    this.best = undefined;
+  },
+};
+
 const scanner = new Scanner(cfg, (signal) => {
   const text = formatSignal(signal, cfg.exchange, cfg.marketType);
+  daily.signals++;
+  if (!daily.best || signal.score > daily.best.score) {
+    daily.best = { symbol: signal.symbol, score: signal.score, windowChangePct: signal.windowChangePct };
+  }
   const action = signal.direction === "down" ? "Short" : cfg.marketType === "swap" ? "Long" : "Buy";
-  const tradeLabel = `${action} on ${cfg.exchange.toUpperCase()} ↗`;
-  const buttons = [
+  const adminButtons = [
     [
-      { text: tradeLabel, url: scanner.market.tradeUrl(signal.symbol) },
+      { text: `${action} on ${cfg.exchange.toUpperCase()} ↗`, url: scanner.market.tradeUrl(signal.symbol) },
       { text: "📈 TradingView ↗", url: scanner.market.tradingViewUrl(signal.symbol) },
     ],
     [{ text: "Dex Screener ↗", url: scanner.market.dexScreenerUrl(signal.symbol) }],
   ];
-  if (cfg.dryRun) log.ok("[DRY_RUN] signal:\n" + text);
-  else void bot.broadcast(text, buttons);
+  // Subscriber-facing buttons are deliberately neutral ("view", not "buy") —
+  // the channel publishes information, it does not tell anyone to trade.
+  const channelButtons = [
+    [
+      { text: "📈 Chart (TradingView) ↗", url: scanner.market.tradingViewUrl(signal.symbol) },
+      { text: `View on ${cfg.exchange.toUpperCase()} ↗`, url: scanner.market.tradeUrl(signal.symbol) },
+    ],
+  ];
+  if (cfg.dryRun) {
+    log.ok("[DRY_RUN] signal:\n" + text);
+  } else {
+    void bot.broadcast(text, adminButtons);
+    if (channelMode) void bot.send(text + DISCLAIMER_FOOTER, cfg.channelId, channelButtons);
+  }
   log.ok(
     `SIGNAL ${signal.symbol} score=${signal.score} risk=${signal.riskLevel}(${signal.riskScore}) +${signal.windowChangePct}% vol=${signal.volumeSurge}x`,
   );
@@ -81,7 +113,7 @@ function statusText(): string {
 }
 
 // --- command handlers ---
-const helpText = [
+const adminHelpText = [
   "👋 <b>Pump Scanner online.</b>",
   `Watching ${cfg.exchange} ${cfg.quote} markets for momentum + volume surges.`,
   "",
@@ -95,9 +127,25 @@ const helpText = [
   "/set &lt;key&gt; &lt;value&gt; – tune a threshold",
   "/scan – force a scan now",
   "/pause · /resume – toggle alerts",
+  "/disclaimer – full risk disclaimer & terms",
   "",
   "<i>Signals are momentum alerts, not financial advice.</i>",
 ].join("\n");
+
+const publicHelpText = [
+  `👋 <b>${cfg.serviceName}</b>`,
+  `Automated momentum/volume signals for ${cfg.exchange} ${cfg.quote} markets are posted to the subscriber channel.`,
+  "",
+  "Commands you can use here:",
+  "/top – current top 24h movers",
+  "/risk &lt;symbol&gt; – scam/risk check a coin (e.g. /risk PEPE)",
+  "/winrate – our honest, hypothetical win-rate stats",
+  "/disclaimer – full risk disclaimer & terms of use",
+  "",
+  "<i>⚠️ Everything this service publishes is educational information, not financial advice. Read /disclaimer before acting on anything.</i>",
+].join("\n");
+
+const helpFor = (chatId: number) => (bot.isAdmin(chatId) ? adminHelpText : publicHelpText);
 
 const COMMAND_MENU = [
   { command: "scan", description: "Force a scan right now" },
@@ -110,19 +158,22 @@ const COMMAND_MENU = [
   { command: "set", description: "Tune a threshold (/set minScore 20)" },
   { command: "pause", description: "Pause alerts" },
   { command: "resume", description: "Resume alerts" },
+  { command: "disclaimer", description: "Risk disclaimer & terms of use" },
   { command: "help", description: "Show all commands" },
 ];
 
-bot.on("start", () => helpText);
-bot.on("help", () => helpText);
-bot.on("status", () => statusText());
-bot.on("settings", () => settingsText(cfg.thresholds));
+bot.on("start", (_args, chatId) => helpFor(chatId));
+bot.on("help", (_args, chatId) => helpFor(chatId));
+bot.on("disclaimer", () => formatDisclaimer(cfg.serviceName));
+bot.on("terms", () => formatDisclaimer(cfg.serviceName));
+bot.on("status", () => statusText(), { adminOnly: true });
+bot.on("settings", () => settingsText(cfg.thresholds), { adminOnly: true });
 bot.on("top", () => formatTopMovers(scanner.topMovers(10)));
 const perf = () => formatPerformance(scanner.tracker.summary(), cfg.trackHorizonMinutes);
 bot.on("performance", perf);
 bot.on("stats", perf);
 bot.on("winrate", perf);
-bot.on("track", () => formatOpenTrades(scanner.tracker.openList(Date.now())));
+bot.on("track", () => formatOpenTrades(scanner.tracker.openList(Date.now())), { adminOnly: true });
 
 bot.on("risk", async (args, chatId) => {
   const input = args[0];
@@ -131,7 +182,7 @@ bot.on("risk", async (args, chatId) => {
   if ("error" in res) return res.error;
   const buttons = [
     [
-      { text: `Trade on ${cfg.exchange.toUpperCase()} ↗`, url: scanner.market.tradeUrl(res.symbol) },
+      { text: `View on ${cfg.exchange.toUpperCase()} ↗`, url: scanner.market.tradeUrl(res.symbol) },
       { text: "📈 TradingView ↗", url: scanner.market.tradingViewUrl(res.symbol) },
     ],
     [{ text: "Dex Screener ↗", url: scanner.market.dexScreenerUrl(res.symbol) }],
@@ -149,16 +200,16 @@ bot.on("set", (args) => {
   if (!Number.isFinite(value)) return `"${valueRaw}" is not a number.`;
   (cfg.thresholds[key as keyof Thresholds] as number) = value;
   return `✅ ${key} = ${value}`;
-});
+}, { adminOnly: true });
 
 bot.on("pause", () => {
   paused = true;
   return "⏸ Alerts paused. /resume to re-enable.";
-});
+}, { adminOnly: true });
 bot.on("resume", () => {
   paused = false;
   return "▶️ Alerts resumed.";
-});
+}, { adminOnly: true });
 bot.on("scan", async () => {
   const found = await scanner.scanOnce();
   const st = scanner.stats;
@@ -177,7 +228,7 @@ bot.on("scan", async () => {
     return `${funnel}\nClosest: ${n.symbol} +${n.change}% vol ${n.surge}× rsi ${n.rsi} score ${n.score} — <i>${n.reject}</i>\nLoosen with /set to catch it.`;
   }
   return `${funnel}\nNothing close — markets are calm right now.`;
-});
+}, { adminOnly: true });
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -233,6 +284,7 @@ async function main() {
 
   // scan loop — keeps running; re-attempts init if the exchange wasn't reachable yet.
   let lastHeartbeat = Date.now();
+  let lastDigestDay = -1;
   for (;;) {
     if (!paused) {
       if (!ready) {
@@ -244,6 +296,38 @@ async function main() {
           await scanner.scanOnce();
         } catch (err) {
           log.error("loop error:", (err as Error).message);
+        }
+
+        // Daily digest to the subscriber channel — the automated "newsletter".
+        const now = new Date();
+        if (
+          channelMode &&
+          cfg.digestHourUtc >= 0 &&
+          now.getUTCHours() === cfg.digestHourUtc &&
+          now.getUTCDate() !== lastDigestDay
+        ) {
+          lastDigestDay = now.getUTCDate();
+          const s = scanner.tracker.summary();
+          const digest = formatDigest({
+            serviceName: cfg.serviceName,
+            dateUtc: now.toISOString().slice(0, 10),
+            signalsToday: daily.signals,
+            bestToday: daily.best,
+            perf: {
+              closed: s.closed,
+              wins: s.wins,
+              winRate: s.winRate,
+              avgFinalPct: s.avgFinalPct,
+              targetPct: s.targetPct,
+              stopPct: s.stopPct,
+            },
+            horizonMin: cfg.trackHorizonMinutes,
+            movers: scanner.topMovers(5),
+          });
+          daily.reset();
+          if (cfg.dryRun) log.ok("[DRY_RUN] digest:\n" + digest);
+          else await bot.send(digest, cfg.channelId);
+          log.ok("Daily digest sent to channel.");
         }
 
         // Periodic proof-of-life so quiet stretches don't look like a crash.
