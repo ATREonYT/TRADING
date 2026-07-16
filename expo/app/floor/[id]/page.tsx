@@ -67,6 +67,8 @@ export default function FloorPage({ params }: { params: { id: string } }) {
   startupsRef.current = startups;
   const myStartupRef = useRef(myStartup);
   myStartupRef.current = myStartup;
+  const dmStartupIdRef = useRef(dmStartupId);
+  dmStartupIdRef.current = dmStartupId;
 
   const nameSet = state.profile.name !== "";
   const tierOk = floor ? TIER_ORDER[state.sub] >= TIER_ORDER[floor.tier] : false;
@@ -143,43 +145,44 @@ export default function FloorPage({ params }: { params: { id: string } }) {
         netRef.current?.sendChat(text, "floor");
         return;
       }
-      setDmStartupId((currentId) => {
-        if (!currentId) return currentId;
-        const startup = startupsRef.current[currentId];
-        if (!startup) return currentId;
-        const mine: ChatMsg = {
+      // Read the active DM id from a ref — doing this work inside a state
+      // updater is impure and runs twice under React strict mode (which
+      // duplicated the sent message in dev).
+      const currentId = dmStartupIdRef.current;
+      if (!currentId) return;
+      const startup = startupsRef.current[currentId];
+      if (!startup) return;
+      const mine: ChatMsg = {
+        id: uid(),
+        fromId: me.id,
+        from: me.name,
+        text,
+        ts: Date.now(),
+        scope: "dm",
+        peerId: `npc:${currentId}`,
+      };
+      setDms((prev) => ({
+        ...prev,
+        [currentId]: [...(prev[currentId] ?? []), mine],
+      }));
+      setTypingFor(currentId);
+      if (replyTimer.current) clearTimeout(replyTimer.current);
+      replyTimer.current = setTimeout(() => {
+        const reply: ChatMsg = {
           id: uid(),
-          fromId: me.id,
-          from: me.name,
-          text,
+          fromId: `npc:${currentId}`,
+          from: startup.founder,
+          text: replyFor(startup, text),
           ts: Date.now(),
           scope: "dm",
           peerId: `npc:${currentId}`,
         };
         setDms((prev) => ({
           ...prev,
-          [currentId]: [...(prev[currentId] ?? []), mine],
+          [currentId]: [...(prev[currentId] ?? []), reply],
         }));
-        setTypingFor(currentId);
-        if (replyTimer.current) clearTimeout(replyTimer.current);
-        replyTimer.current = setTimeout(() => {
-          const reply: ChatMsg = {
-            id: uid(),
-            fromId: `npc:${currentId}`,
-            from: startup.founder,
-            text: replyFor(startup, text),
-            ts: Date.now(),
-            scope: "dm",
-            peerId: `npc:${currentId}`,
-          };
-          setDms((prev) => ({
-            ...prev,
-            [currentId]: [...(prev[currentId] ?? []), reply],
-          }));
-          setTypingFor((t) => (t === currentId ? null : t));
-        }, 600 + Math.random() * 300);
-        return currentId;
-      });
+        setTypingFor((t) => (t === currentId ? null : t));
+      }, 600 + Math.random() * 300);
     },
     [],
   );

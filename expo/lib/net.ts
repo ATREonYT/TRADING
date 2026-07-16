@@ -85,10 +85,20 @@ export function createNetClient(wsUrl?: string): NetClient {
     const old = ws;
     ws = null;
     detach(old);
+    if (old.readyState === WebSocket.CONNECTING) {
+      // Closing a CONNECTING socket logs a browser console warning (and can
+      // throw in some engines). Let the handshake settle, then close —
+      // relevant under React strict mode's mount/unmount/mount cycle.
+      old.onopen = () => old.close(1000);
+      old.onerror = () => {
+        // Swallow — this socket is abandoned; nothing listens anymore.
+      };
+      return;
+    }
     try {
       old.close(1000);
     } catch {
-      // Closing a CONNECTING socket can throw in some engines; ignore.
+      // Already closing/closed — ignore.
     }
   }
 

@@ -1,0 +1,312 @@
+"use client";
+
+/**
+ * FounderFloor — SSR-safe client persistence.
+ *
+ * All app state lives under one localStorage key ("founderfloor:v1") and is
+ * shared across every component that calls useAppState() via a module-level
+ * store + emitter. Cross-tab consistency comes from the `storage` event.
+ *
+ * On the server (and during hydration) the hook returns a stable default
+ * snapshot; the real persisted state is loaded after mount, so server and
+ * client markup always agree.
+ */
+
+import { useSyncExternalStore } from "react";
+import type {
+  AppState,
+  AvatarLook,
+  Connection,
+  Startup,
+  SubTier,
+} from "@/lib/types";
+
+const STORAGE_KEY = "founderfloor:v1";
+
+export interface StoreActions {
+  setName(name: string): void;
+  setLook(look: AvatarLook): void;
+  setSub(tier: SubTier): void;
+  addConnection(c: Omit<Connection, "ts">): void;
+  removeConnection(ts: number): void;
+  saveMyStartup(s: Startup): void;
+  clearMyStartup(): void;
+  verifyMyRevenue(monthly: number, goalProgress: number): void;
+}
+
+// ---------- defaults ----------
+
+function defaultState(): AppState {
+  return {
+    profile: { id: "", name: "", look: { skin: 0, outfit: 0, hair: 0 } },
+    sub: "free",
+    connections: [],
+  };
+}
+
+/** Stable reference for getServerSnapshot — must never change identity. */
+const SERVER_SNAPSHOT: AppState = defaultState();
+
+// ---------- module-level store ----------
+
+let state: AppState = defaultState();
+let hydrated = false;
+let storageListenerAttached = false;
+const listeners = new Set<() => void>();
+
+function emit(): void {
+  for (const cb of Array.from(listeners)) cb();
+}
+
+function persist(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Storage may be full or blocked (private mode) — state still works in-memory.
+  }
+}
+
+function setState(next: AppState): void {
+  state = next;
+  persist();
+  emit();
+}
+
+// ---------- id + parsing helpers ----------
+
+function makeId(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch {
+    // fall through to the hex fallback
+  }
+  let hex = "";
+  for (let i = 0; i < 32; i++) {
+    hex += Math.floor(Math.random() * 16).toString(16);
+  }
+  return hex;
+}
+
+function clamp01(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(1, Math.max(0, n));
+}
+
+function numOr(v: unknown, fallback: number): number {
+  return typeof v === "number" && Number.isFinite(v) ? v : fallback;
+}
+
+function looksLikeConnection(v: unknown): v is Connection {
+  if (!v || typeof v !== "object") return false;
+  const c = v as Record<string, unknown>;
+  return (
+    typeof c.name === "string" &&
+    typeof c.ts === "number" &&
+    typeof c.floorId === "string"
+  );
+}
+
+function looksLikeStartup(v: unknown): v is Startup {
+  if (!v || typeof v !== "object") return false;
+  const s = v as Record<string, unknown>;
+  return (
+    typeof s.id === "string" &&
+    typeof s.name === "string" &&
+    typeof s.goal === "string" &&
+    typeof s.booth === "object" &&
+    s.booth !== null
+  );
+}
+
+/** Defensive re-shape of whatever was in localStorage into a valid AppState. */
+function sanitize(raw: unknown): AppState {
+  const base = defaultState();
+  if (!raw || typeof raw !== "object") return base;
+  const r = raw as Record<string, unknown>;
+
+  const p = r.profile;
+  if (p && typeof p === "object") {
+    const pr = p as Record<string, unknown>;
+    if (typeof pr.id === "string") base.profile.id = pr.id;
+    if (typeof pr.name === "string") base.profile.name = pr.name;
+    const look = pr.look;
+    if (look && typeof look === "object") {
+      const l = look as Record<string, unknown>;
+      base.profile.look = {
+        skin: numOr(l.skin, 0),
+        outfit: numOr(l.outfit, 0),
+        hair: numOr(l.hair, 0),
+      };
+    }
+  }
+
+  if (r.sub === "free" || r.sub === "pro" || r.sub === "founder") {
+    base.sub = r.sub;
+  }
+
+  if (Array.isArray(r.connections)) {
+    base.connections = r.connections.filter(looksLikeConnection);
+  }
+
+  if (looksLikeStartup(r.myStartup)) {
+    const s = r.myStartup;
+    base.myStartup = {
+      ...s,
+      goalProgress: clamp01(numOr(s.goalProgress, 0)),
+      verifiedRevenue: Math.max(0, numOr(s.verifiedRevenue, 0)),
+    };
+  }
+
+  return base;
+}
+
+// ---------- hydration + cross-tab sync ----------
+
+function ensureClientInit(): void {
+  if (hydrated || typeof window === "undefined") return;
+  hydrated = true;
+
+  let next: AppState;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    next = raw ? sanitize(JSON.parse(raw)) : defaultState();
+  } catch {
+    next = defaultState();
+  }
+
+  // First run (or corrupted id): mint and persist a stable profile id.
+  if (!next.profile.id) {
+    next = { ...next, profile: { ...next.profile, id: makeId() } };
+  }
+
+  state = next;
+  persist();
+  emit();
+
+  if (!storageListenerAttached) {
+    storageListenerAttached = true;
+    window.addEventListener("storage", (ev: StorageEvent) => {
+      if (ev.key !== null && ev.key !== STORAGE_KEY) return;
+      try {
+        let incoming = ev.newValue
+          ? sanitize(JSON.parse(ev.newValue))
+          : defaultState();
+        if (!incoming.profile.id) {
+          incoming = {
+            ...incoming,
+            profile: { ...incoming.profile, id: makeId() },
+          };
+        }
+        state = incoming;
+        emit();
+      } catch {
+        // Ignore malformed writes from other tabs.
+      }
+    });
+  }
+}
+
+function subscribe(cb: () => void): () => void {
+  listeners.add(cb);
+  ensureClientInit();
+  return () => {
+    listeners.delete(cb);
+  };
+}
+
+function getSnapshot(): AppState {
+  return state;
+}
+
+function getServerSnapshot(): AppState {
+  return SERVER_SNAPSHOT;
+}
+
+// ---------- actions (module-level, stable identity) ----------
+
+const ACTIONS: StoreActions = {
+  setName(name: string): void {
+    ensureClientInit();
+    setState({ ...state, profile: { ...state.profile, name } });
+  },
+
+  setLook(look: AvatarLook): void {
+    ensureClientInit();
+    setState({ ...state, profile: { ...state.profile, look: { ...look } } });
+  },
+
+  setSub(tier: SubTier): void {
+    ensureClientInit();
+    setState({ ...state, sub: tier });
+  },
+
+  addConnection(c: Omit<Connection, "ts">): void {
+    ensureClientInit();
+    // Dedupe by startupId when present, otherwise by name among
+    // connections that also lack a startupId. Re-connecting refreshes ts.
+    const isSame = (x: Connection): boolean =>
+      c.startupId !== undefined
+        ? x.startupId === c.startupId
+        : x.startupId === undefined && x.name === c.name;
+    const kept = state.connections.filter((x) => !isSame(x));
+    // ts doubles as the removal key, so keep it unique even when two
+    // connections land in the same millisecond.
+    const maxExisting = kept.reduce((m, x) => Math.max(m, x.ts), 0);
+    const ts = Math.max(Date.now(), maxExisting + 1);
+    setState({ ...state, connections: [{ ...c, ts }, ...kept] });
+  },
+
+  removeConnection(ts: number): void {
+    ensureClientInit();
+    setState({
+      ...state,
+      connections: state.connections.filter((x) => x.ts !== ts),
+    });
+  },
+
+  saveMyStartup(s: Startup): void {
+    ensureClientInit();
+    setState({
+      ...state,
+      myStartup: {
+        ...s,
+        goalProgress: clamp01(s.goalProgress),
+        verifiedRevenue: Math.max(0, numOr(s.verifiedRevenue, 0)),
+      },
+    });
+  },
+
+  clearMyStartup(): void {
+    ensureClientInit();
+    const { myStartup: _dropped, ...rest } = state;
+    setState({ ...rest });
+  },
+
+  verifyMyRevenue(monthly: number, goalProgress: number): void {
+    ensureClientInit();
+    const current = state.myStartup;
+    if (!current) return; // no-op without a startup to verify
+    setState({
+      ...state,
+      myStartup: {
+        ...current,
+        verifiedRevenue: Math.max(0, numOr(monthly, 0)),
+        goalProgress: clamp01(goalProgress),
+      },
+    });
+  },
+};
+
+// ---------- hook ----------
+
+/**
+ * [state, actions] for the local player. Safe to call from any number of
+ * components at once — all instances share one store and re-render together.
+ */
+export function useAppState(): [AppState, StoreActions] {
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  return [snapshot, ACTIONS];
+}
