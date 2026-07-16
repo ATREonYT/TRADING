@@ -1730,3 +1730,151 @@ export function replyFor(startup: Startup, text: string): string {
   }
   return `Good question — short version: ${startup.oneLiner} Ask about the product, the pricing, the goal, or the team.`;
 }
+
+// ======================================================================
+// Ambient idle chatter
+// ======================================================================
+
+/**
+ * Short lines an NPC founder mutters to nobody in particular when the floor
+ * is quiet — fed to the game engine via GameOptions.idleLines so booths read
+ * as inhabited even with zero visitors.
+ *
+ * VALIDATION: every key below must be a key of STARTUPS (and should cover all
+ * of them). Keep lines <= 80 chars, in the founder's booth-dialogue voice,
+ * and free of exclamation marks — these are murmurs, not pitches.
+ */
+export const IDLE_LINES: Record<string, string[]> = {
+  // ---- main hall ----
+  "soup-ticket": [
+    "Somewhere right now it's white bean day and I'm here. Worth it. Probably.",
+    "Note to self: do not pitch bagel shops yet. Focus. Soup first.",
+    "Half this hall skipped lunch. I can tell. It's a gift and a burden.",
+  ],
+  "night-shift-audio": [
+    "Whoever crimped this booth's power cable should be ashamed. I checked.",
+    "The PA in here hums at 60 hertz. Nobody else seems to mind. Fine.",
+    "Glued housings everywhere. An entire industry afraid of screws.",
+  ],
+  "crate-and-pallet": [
+    "These booth risers are pine two-ways. Four trips left in them, tops.",
+    "Grade-A 48-by-40s are up two dollars this year. Nobody here cares.",
+    "Rhonda flagged three price anomalies this morning. Good spreadsheet.",
+  ],
+  gutterball: [
+    "Good approach on this carpet. You could bowl a frame or two in here.",
+    "Tuesday league's starting back home about now. Gary's got it. Probably.",
+    "Should've brought cheese curds for the table. Rookie booth mistake.",
+  ],
+  fernworks: [
+    "Humidity in here is nearly optimal for fruiting. Someone should know.",
+    "The day-12 batch is binding about now. Grow, you strange little things.",
+    "This sample foam has survived forty demos. Better shape than I'm in.",
+  ],
+  ledgerline: [
+    "Foot traffic is up eleven percent on the half hour. I have been counting.",
+    "A quiet booth, like a balanced ledger, is nothing to apologize for.",
+    "The banner opposite hangs two degrees off level. I shall say nothing.",
+  ],
+  copydesk: [
+    "That banner across the aisle says 'utilize'. Flagged. Severity: high.",
+    "Four minutes to deadline. There is no deadline. Old newsroom habits.",
+    "Someone's signage has a hyphen doing an em dash's job. I see it.",
+  ],
+  shelfware: [
+    "I have thirty tabs open on how to work a booth. None of them helped.",
+    "Quiet floor today. Quiet is fine. Quiet is sort of my whole product.",
+    "I should write down that idea before it... too late. It's gone.",
+  ],
+
+  // ---- indie alley ----
+  mudroom: [
+    "No dogs allowed at this expo, yet statistically three of you own doodles.",
+    "Someone walked past with golden fur on their coat. Doodle. I'd bet money.",
+    "A groomer could fit two of these booths in one Sprinter van. Easily.",
+  ],
+  "zine-machine": [
+    "These fluorescents would murder a riso pink. Flatten it completely.",
+    "Beverly's alone at the shop today. She's fine. She's probably fine.",
+    "Every banner in this hall is CMYK-safe. Cowardice, aisle after aisle.",
+  ],
+  coldframe: [
+    "Clear sky tonight. Somebody's field is going below freezing, guaranteed.",
+    "The airport says 41 tonight. The airport is wrong about somebody's field.",
+    "Climate control in this hall beats my barn's. Duly noted.",
+  ],
+  patchbay: [
+    "That left speaker's wired out of phase. Nobody hears it. I hear it.",
+    "Decent cable runs on the lighting rig. Somebody here knows their craft.",
+    "Slow floor. Clean signal, low noise. I'll take it.",
+  ],
+  loafer: [
+    "The starters are fed through six o'clock. Until then, I am off duty.",
+    "Room temperature in here would suit a rye starter. I checked. Twice.",
+    "Two different clients named a starter Clint Yeastwood. Independently.",
+  ],
+
+  // ---- ramen district ----
+  wrenchlist: [
+    "Somebody wheeled a crate through here with a dry bearing. I heard it.",
+    "Fifteen years on a repair stand and my back still expects one.",
+    "A blocked stand is dead money. A quiet booth is just quiet. Different.",
+  ],
+  "sheet-metal": [
+    "Somewhere in this hall, one spreadsheet is holding a company together.",
+    "I nearly said 'synergy' to a stranger just now. Caught it. Growth.",
+    "Gord's macro still runs in my dreams. Two hundred fourteen tabs.",
+  ],
+  barnacle: [
+    "Floor doesn't rock. Thirty years on docks — feels wrong when it's still.",
+    "Somewhere right now, Gus is not paying for his slip. I can feel it.",
+    "Convention halls charge by the foot too. The racket translates.",
+  ],
+  "on-call-room": [
+    "Twelve years of night shifts and this lighting still feels like home.",
+    "I clocked both exits and the AED when I walked in. Old habit. Good habit.",
+    "Somewhere a shift swap is dying in a group text. We could fix that.",
+  ],
+  "lower-third": [
+    "That projector's keystone is off by a hair. Been bugging me for an hour.",
+    "Espresso number four. The ticker in my head is scrolling clean.",
+    "Ruth would have this expo's signage running on time. Ruth runs tight.",
+  ],
+  dunning: [
+    "Statistically, three people in this aisle have an invoice at day 60.",
+    "A courteous reminder loses none of its teeth. I should embroider that.",
+    "Someone here is 87 days late on something. One develops a sense.",
+  ],
+
+  // ---- co-founder row ----
+  "second-stove": [
+    "Expo coffee. I've had worse at 2am in a commissary. Barely.",
+    "This booth took me an hour to set up. A line cook does it in ten.",
+    "Someone's reheating something with cumin two aisles over. Respect.",
+  ],
+  glasshouse: [
+    "Ambient humidity is 41 percent. Acceptable for people, poor for tomatoes.",
+    "The HVAC cycles every eleven minutes. Wasteful, but at least consistent.",
+    "My vents opened at 3am again last night. The firmware search continues.",
+  ],
+  rebar: [
+    "Nice slab under this carpet. Flat, good cure. Somebody knew their trade.",
+    "I checked this hall's columns for honeycombing. Habit. They pass.",
+    "Twenty years of jackhammers and people still say I talk loud. I KNOW.",
+  ],
+  "pocket-notary": [
+    "Thirty-two states down, eighteen statutes to go. I know them by heart.",
+    "That handshake over there could have used a witness. Occupational reflex.",
+    "It's almost Friday somewhere. Somewhere, a closing needs a stamp.",
+  ],
+  "grave-matters": [
+    "That signage font would look lovely in granite. Most fonts do, honestly.",
+    "Pet memorials outsold uncles again this month. People are consistent.",
+    "Everyone at this expo is a future customer. I mean that warmly.",
+  ],
+  stretcher: [
+    "Half this hall is standing with locked knees. Soften them, people.",
+    "Booth duty: eight hours standing. I have a program for that, obviously.",
+    "The posture in this room is a waitlist all by itself.",
+  ],
+};

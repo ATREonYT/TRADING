@@ -37,6 +37,12 @@ export default function RootLayout({
                 Floors
               </Link>
               <Link
+                href="/directory"
+                className="text-sm text-muted hover:text-ink hover:underline"
+              >
+                Directory
+              </Link>
+              <Link
                 href="/profile"
                 className="text-sm text-muted hover:text-ink hover:underline"
               >

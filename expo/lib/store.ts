@@ -17,9 +17,11 @@ import type {
   AppState,
   AvatarLook,
   Connection,
+  OnboardingStep,
   Startup,
   SubTier,
 } from "@/lib/types";
+import { ONBOARDING_STEPS } from "@/lib/types";
 import { FLOORS } from "@/lib/data/floors";
 
 const STORAGE_KEY = "founderfloor:v1";
@@ -37,6 +39,14 @@ export interface StoreActions {
   claimSpot(floorId: string, spotIndex: number): void;
   /** Pack up your stand on a floor. */
   unclaimSpot(floorId: string): void;
+  /** Set the status line under your name (trimmed, <= 40 chars; empty clears it). */
+  setStatus(s: string): void;
+  /** Attach a personal note to a connection by its ts key (trimmed, <= 200; empty clears). */
+  setConnectionNote(ts: number, note: string): void;
+  /** Mark a first-session checklist step done. Appends once; unknown steps are ignored. */
+  completeOnboarding(step: OnboardingStep): void;
+  /** Award a badge id (<= 32 chars). Appends once; duplicates are ignored. */
+  grantBadge(id: string): void;
 }
 
 // ---------- defaults ----------
@@ -47,6 +57,8 @@ function defaultState(): AppState {
     sub: "free",
     connections: [],
     claims: {},
+    onboarding: [],
+    badges: [],
   };
 }
 
@@ -169,6 +181,10 @@ function sanitize(raw: unknown): AppState {
     if (pr.look && typeof pr.look === "object") {
       base.profile.look = sanitizeLook(pr.look);
     }
+    if (typeof pr.status === "string") {
+      const status = pr.status.trim().slice(0, 40);
+      if (status) base.profile.status = status;
+    }
   }
 
   if (r.sub === "free" || r.sub === "pro" || r.sub === "founder") {
@@ -176,7 +192,18 @@ function sanitize(raw: unknown): AppState {
   }
 
   if (Array.isArray(r.connections)) {
-    base.connections = r.connections.filter(looksLikeConnection);
+    base.connections = r.connections.filter(looksLikeConnection).map((c) => {
+      const out: Connection = { name: c.name, ts: c.ts, floorId: c.floorId };
+      if (typeof c.startupId === "string") out.startupId = c.startupId;
+      if (typeof c.founder === "string") out.founder = c.founder;
+      if (typeof c.peerId === "string") {
+        const peerId = c.peerId.trim().slice(0, 64);
+        if (peerId) out.peerId = peerId;
+      }
+      const note = typeof c.note === "string" ? c.note.trim().slice(0, 200) : "";
+      if (note) out.note = note;
+      return out;
+    });
   }
 
   if (looksLikeStartup(r.myStartup)) {
@@ -200,6 +227,29 @@ function sanitize(raw: unknown): AppState {
     // Indie Alley's front-row-center spot. Keep that stand standing.
     const alley = FLOORS.find((f) => f.id === "indie-alley");
     if (alley?.reservedSpot !== undefined) base.claims["indie-alley"] = alley.reservedSpot;
+  }
+
+  // Older localStorage snapshots predate onboarding/badges — the defaults
+  // above already leave them as empty arrays, so hydration stays clean.
+  if (Array.isArray(r.onboarding)) {
+    const steps = new Set<OnboardingStep>();
+    for (const v of r.onboarding) {
+      if (typeof v === "string" && (ONBOARDING_STEPS as readonly string[]).includes(v)) {
+        steps.add(v as OnboardingStep);
+      }
+    }
+    base.onboarding = Array.from(steps);
+  }
+
+  if (Array.isArray(r.badges)) {
+    const ids = new Set<string>();
+    for (const v of r.badges) {
+      if (typeof v !== "string") continue;
+      const id = v.trim();
+      if (id && id.length <= 32) ids.add(id);
+      if (ids.size >= 20) break;
+    }
+    base.badges = Array.from(ids);
   }
 
   return base;
@@ -287,12 +337,15 @@ const ACTIONS: StoreActions = {
 
   addConnection(c: Omit<Connection, "ts">): void {
     ensureClientInit();
-    // Dedupe by startupId when present, otherwise by name among
-    // connections that also lack a startupId. Re-connecting refreshes ts.
+    // Dedupe by peerId when present (names collide between live people),
+    // then by startupId, otherwise by name among connections that also lack
+    // both ids. Re-connecting refreshes ts.
     const isSame = (x: Connection): boolean =>
-      c.startupId !== undefined
-        ? x.startupId === c.startupId
-        : x.startupId === undefined && x.name === c.name;
+      c.peerId !== undefined
+        ? x.peerId === c.peerId
+        : c.startupId !== undefined
+          ? x.startupId === c.startupId
+          : x.startupId === undefined && x.peerId === undefined && x.name === c.name;
     const kept = state.connections.filter((x) => !isSame(x));
     // ts doubles as the removal key, so keep it unique even when two
     // connections land in the same millisecond.
@@ -356,6 +409,48 @@ const ACTIONS: StoreActions = {
     const claims = { ...state.claims };
     delete claims[floorId];
     setState({ ...state, claims });
+  },
+
+  setStatus(s: string): void {
+    ensureClientInit();
+    const status = s.trim().slice(0, 40);
+    if (status === (state.profile.status ?? "")) return; // no-op, skip a write
+    const profile = { ...state.profile };
+    if (status) profile.status = status;
+    else delete profile.status;
+    setState({ ...state, profile });
+  },
+
+  setConnectionNote(ts: number, note: string): void {
+    ensureClientInit();
+    if (!state.connections.some((c) => c.ts === ts)) return;
+    const trimmed = note.trim().slice(0, 200);
+    const connections = state.connections.map((c) => {
+      if (c.ts !== ts) return c;
+      if (!trimmed) {
+        const { note: _dropped, ...rest } = c;
+        return rest;
+      }
+      return { ...c, note: trimmed };
+    });
+    setState({ ...state, connections });
+  },
+
+  completeOnboarding(step: OnboardingStep): void {
+    ensureClientInit();
+    // Validate at runtime too — steps can arrive from loosely-typed callers.
+    if (!ONBOARDING_STEPS.includes(step)) return;
+    if (state.onboarding.includes(step)) return;
+    setState({ ...state, onboarding: [...state.onboarding, step] });
+  },
+
+  grantBadge(id: string): void {
+    ensureClientInit();
+    const badge = id.trim();
+    if (!badge || badge.length > 32) return;
+    if (state.badges.includes(badge)) return;
+    if (state.badges.length >= 20) return; // matches the sanitize() cap
+    setState({ ...state, badges: [...state.badges, badge] });
   },
 };
 

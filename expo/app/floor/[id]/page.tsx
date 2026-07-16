@@ -5,26 +5,76 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAppState } from "@/lib/store";
 import { floorById } from "@/lib/data/floors";
-import { STARTUPS, replyFor } from "@/lib/data/startups";
+import { STARTUPS, IDLE_LINES, replyFor } from "@/lib/data/startups";
 import { createNetClient } from "@/lib/net";
 import { createGame } from "@/game/engine";
-import { TIER_ORDER } from "@/lib/types";
+import { ONBOARDING_STEPS, TIER_ORDER } from "@/lib/types";
 import type {
+  ActivityItem,
+  BoothClaim,
   BoothInstance,
   ChatMsg,
+  EmoteKind,
   GameHandle,
+  HoverTarget,
   NetClient,
   Startup,
 } from "@/lib/types";
 import BoothCard from "@/components/BoothCard";
 import OpenStandCard from "@/components/OpenStandCard";
-import ChatPanel from "@/components/ChatPanel";
+import ChatPanel, { type ChatThread } from "@/components/ChatPanel";
+import EmoteBar from "@/components/EmoteBar";
+import HoverCard from "@/components/HoverCard";
+import ActivityTicker from "@/components/ActivityTicker";
+import OnboardingCard from "@/components/OnboardingCard";
+import EventPill from "@/components/EventPill";
 import Toast, { type ToastData } from "@/components/Toast";
 import TierTag, { TIER_LABEL } from "@/components/TierTag";
 
 function uid(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
+
+function firstName(full: string): string {
+  return full.split(" ")[0] || full;
+}
+
+/** One chat thread in the panel: an NPC founder DM or a live-player DM. */
+interface ThreadState {
+  key: string; // "npc:<startupId>" | "player:<wireId>"
+  kind: "npc" | "player";
+  label: string;
+  title: string;
+  startupId?: string;
+  peerId?: string;
+  msgs: ChatMsg[];
+  typing: boolean;
+  unread: boolean;
+  /** Closed threads keep their history but lose their tab. */
+  open: boolean;
+  /** Player threads only: the peer has left the floor. */
+  left?: boolean;
+}
+
+/** Muted transcript line for liveness changes ("<name> left the floor"). */
+function systemMsg(text: string): ChatMsg {
+  return { id: uid(), fromId: "system", from: "", text, ts: Date.now(), scope: "dm" };
+}
+
+/** Flip a player thread's liveness: title, flag, and one transcript line. */
+function withPeerPresence(th: ThreadState, present: boolean): ThreadState {
+  return {
+    ...th,
+    left: !present,
+    title: present ? `${th.label} · on this floor` : `${th.label} · left the floor`,
+    msgs: [
+      ...th.msgs,
+      systemMsg(present ? `${th.label} is back on this floor` : `${th.label} left the floor`),
+    ],
+  };
+}
+
+const MAX_ACTIVITY = 8;
 
 export default function FloorPage({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -42,11 +92,15 @@ export default function FloorPage({ params }: { params: { id: string } }) {
   const [nearBooth, setNearBooth] = useState<BoothInstance | null>(null);
   const [activeBooth, setActiveBooth] = useState<BoothInstance | null>(null);
   const [floorMsgs, setFloorMsgs] = useState<ChatMsg[]>([]);
-  const [dms, setDms] = useState<Record<string, ChatMsg[]>>({});
-  const [dmStartupId, setDmStartupId] = useState<string | null>(null);
-  const [typingFor, setTypingFor] = useState<string | null>(null);
-  const [tab, setTab] = useState<"floor" | "dm">("floor");
+  const [threads, setThreads] = useState<Record<string, ThreadState>>({});
+  const [tab, setTab] = useState<string>("floor");
+  const [hover, setHover] = useState<HoverTarget | null>(null);
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [coarse, setCoarse] = useState(false);
   const [toast, setToast] = useState<ToastData | null>(null);
+  // Touch users have no M key; this mirrors the engine's on-when-map-overflows
+  // default (true on any phone-sized viewport) and drives the "map" button.
+  const [minimapOn, setMinimapOn] = useState(true);
 
   // ---- refs (stable across the game's lifetime) ----
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -54,6 +108,8 @@ export default function FloorPage({ params }: { params: { id: string } }) {
   const netRef = useRef<NetClient | null>(null);
   const replyTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** The claim held before the last optimistic booth_set (for denial rollback). */
+  const prevClaimRef = useRef<BoothClaim | null>(null);
 
   const myStartup = state.myStartup;
   const startups: Record<string, Startup> = useMemo(
@@ -67,12 +123,18 @@ export default function FloorPage({ params }: { params: { id: string } }) {
   startupsRef.current = startups;
   const myStartupRef = useRef(myStartup);
   myStartupRef.current = myStartup;
-  const dmStartupIdRef = useRef(dmStartupId);
-  dmStartupIdRef.current = dmStartupId;
   const claimsRef = useRef(state.claims);
   claimsRef.current = state.claims;
   const activeBoothRef = useRef(activeBooth);
   activeBoothRef.current = activeBooth;
+  const threadsRef = useRef(threads);
+  threadsRef.current = threads;
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
+  const connectionsRef = useRef(state.connections);
+  connectionsRef.current = state.connections;
+  const badgesRef = useRef(state.badges);
+  badgesRef.current = state.badges;
 
   const nameSet = state.profile.name !== "";
   const tierOk = floor ? TIER_ORDER[state.sub] >= TIER_ORDER[floor.tier] : false;
@@ -83,71 +145,210 @@ export default function FloorPage({ params }: { params: { id: string } }) {
     if (ready && floor && !nameSet) router.replace("/lobby");
   }, [ready, floor, nameSet, router]);
 
+  // coarse pointer (touch) — different control hints, same game
+  useEffect(() => {
+    const mq = window.matchMedia("(pointer: coarse)");
+    setCoarse(mq.matches);
+    const onChange = (e: MediaQueryListEvent): void => setCoarse(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
   const showToast = useCallback((text: string) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ id: Date.now(), text });
     toastTimer.current = setTimeout(() => setToast(null), 2600);
   }, []);
 
-  const openDm = useCallback((s: Startup) => {
-    setDms((prev) =>
-      prev[s.id]
-        ? prev
-        : {
-            ...prev,
-            [s.id]: [
-              {
-                id: uid(),
-                fromId: `npc:${s.id}`,
-                from: s.founder,
-                text: replyFor(s, ""),
-                ts: Date.now(),
-                scope: "dm",
-                peerId: `npc:${s.id}`,
-              },
-            ],
-          },
+  // ---- threads ----
+
+  const openNpcThread = useCallback((s: Startup) => {
+    const key = `npc:${s.id}`;
+    const greeting: ChatMsg = {
+      id: uid(),
+      fromId: key,
+      from: s.founder,
+      text: replyFor(s, ""),
+      ts: Date.now(),
+      scope: "dm",
+      peerId: key,
+    };
+    setThreads((prev) => {
+      const existing = prev[key];
+      if (existing) {
+        return { ...prev, [key]: { ...existing, open: true, unread: false } };
+      }
+      return {
+        ...prev,
+        [key]: {
+          key,
+          kind: "npc",
+          label: firstName(s.founder),
+          title: `${s.founder} · ${s.name}`,
+          startupId: s.id,
+          msgs: [greeting],
+          typing: false,
+          unread: false,
+          open: true,
+        },
+      };
+    });
+    setTab(key);
+  }, []);
+
+  const openPlayerThread = useCallback((wireId: string, name: string) => {
+    const key = `player:${wireId}`;
+    setThreads((prev) => {
+      const existing = prev[key];
+      if (existing) {
+        return { ...prev, [key]: { ...existing, open: true, unread: false } };
+      }
+      return {
+        ...prev,
+        [key]: {
+          key,
+          kind: "player",
+          label: name,
+          title: `${name} · on this floor`,
+          peerId: wireId,
+          msgs: [],
+          typing: false,
+          unread: false,
+          open: true,
+        },
+      };
+    });
+    setTab(key);
+  }, []);
+
+  const handleTab = useCallback((key: string) => {
+    setTab(key);
+    if (key !== "floor") {
+      setThreads((prev) =>
+        prev[key] ? { ...prev, [key]: { ...prev[key], unread: false } } : prev,
+      );
+    }
+  }, []);
+
+  const closeThread = useCallback((key: string) => {
+    setThreads((prev) =>
+      prev[key] ? { ...prev, [key]: { ...prev[key], open: false } } : prev,
     );
-    setDmStartupId(s.id);
-    setTab("dm");
+    setTab((t) => (t === key ? "floor" : t));
   }, []);
 
   const connectedIds = useMemo(
     () => new Set(state.connections.map((c) => c.startupId)),
     [state.connections],
   );
+  const connectedIdsRef = useRef(connectedIds);
+  connectedIdsRef.current = connectedIds;
 
   const handleConnect = useCallback(
-    (s: Startup) => {
-      if (!floor || connectedIds.has(s.id)) return;
+    (s: Startup, ownerId?: string) => {
+      if (!floor) return;
+      if (ownerId) {
+        // A live player's claimed stand: key the connection by the person
+        // (their wire id), never by startup id — every client's own startup
+        // shares the same local id, so ids collide across people.
+        if (connectionsRef.current.some((c) => c.peerId === ownerId)) return;
+        actions.addConnection({
+          name: s.name,
+          founder: s.founder,
+          floorId: floor.id,
+          peerId: ownerId,
+        });
+        actions.completeOnboarding("connect");
+        showToast(`Connected with ${s.founder} of ${s.name}.`);
+        return;
+      }
+      if (connectedIdsRef.current.has(s.id)) return;
       actions.addConnection({
         startupId: s.id,
         name: s.name,
         founder: s.founder,
         floorId: floor.id,
       });
+      actions.completeOnboarding("connect");
       showToast(`Connected with ${s.founder} of ${s.name}.`);
       // The founder acknowledges the connection in their own voice, in the DM thread.
       if (!s.id.startsWith("mine")) {
+        const key = `npc:${s.id}`;
         const ack: ChatMsg = {
           id: uid(),
-          fromId: `npc:${s.id}`,
+          fromId: key,
           from: s.founder,
           text: s.dialogue?.connectReply ?? "Connected — good to meet you.",
           ts: Date.now(),
           scope: "dm",
-          peerId: `npc:${s.id}`,
+          peerId: key,
         };
-        setDms((prev) => ({ ...prev, [s.id]: [...(prev[s.id] ?? []), ack] }));
+        setThreads((prev) => {
+          const existing = prev[key];
+          if (existing) {
+            return {
+              ...prev,
+              [key]: {
+                ...existing,
+                msgs: [...existing.msgs, ack],
+                unread: existing.open && tabRef.current !== key ? true : existing.unread,
+              },
+            };
+          }
+          // No thread yet (connected from the booth card without chatting) —
+          // keep the ack in a hidden thread so it's there when they open it.
+          return {
+            ...prev,
+            [key]: {
+              key,
+              kind: "npc",
+              label: firstName(s.founder),
+              title: `${s.founder} · ${s.name}`,
+              startupId: s.id,
+              msgs: [ack],
+              typing: false,
+              unread: false,
+              open: false,
+            },
+          };
+        });
       }
     },
-    [floor, connectedIds, actions, showToast],
+    [floor, actions, showToast],
+  );
+
+  const connectThreadKey = useCallback(
+    (key: string) => {
+      const th = threadsRef.current[key];
+      if (!th || !floor) return;
+      if (th.kind === "npc" && th.startupId) {
+        const s = startupsRef.current[th.startupId];
+        if (s) handleConnect(s);
+        return;
+      }
+      // Dedupe on the peer's wire id — display names collide between people.
+      const already = connectionsRef.current.some((c) =>
+        th.peerId
+          ? c.peerId === th.peerId
+          : c.startupId === undefined && c.peerId === undefined && c.name === th.label,
+      );
+      if (already) return;
+      actions.addConnection({ name: th.label, floorId: floor.id, peerId: th.peerId });
+      actions.completeOnboarding("connect");
+      showToast(`Connected with ${th.label}.`);
+    },
+    [floor, actions, handleConnect, showToast],
   );
 
   const handleClaim = useCallback(
     (b: BoothInstance) => {
       const s = myStartupRef.current;
       if (!floor || !s) return;
+      // Remember what we held: if the server denies this spot, the stand
+      // rolls back instead of silently ghosting for everyone else.
+      const prevIdx = claimsRef.current[floor.id];
+      prevClaimRef.current =
+        prevIdx !== undefined ? { spotIndex: prevIdx, startup: s } : null;
       actions.claimSpot(floor.id, b.spotIndex);
       const claim = { spotIndex: b.spotIndex, startup: s };
       handleRef.current?.setMyBooth(claim);
@@ -168,9 +369,9 @@ export default function FloorPage({ params }: { params: { id: string } }) {
   }, [floor, actions, showToast]);
 
   const handleSend = useCallback(
-    (text: string, scope: "floor" | "dm") => {
+    (text: string, tabKey: string) => {
       const me = profileRef.current;
-      if (scope === "floor") {
+      if (tabKey === "floor") {
         const msg: ChatMsg = {
           id: uid(),
           fromId: me.id,
@@ -183,15 +384,12 @@ export default function FloorPage({ params }: { params: { id: string } }) {
         // online we filter our own echo out of incoming events.
         setFloorMsgs((m) => [...m.slice(-199), msg]);
         netRef.current?.sendChat(text, "floor");
+        handleRef.current?.showBubble("me", text);
         return;
       }
-      // Read the active DM id from a ref — doing this work inside a state
-      // updater is impure and runs twice under React strict mode (which
-      // duplicated the sent message in dev).
-      const currentId = dmStartupIdRef.current;
-      if (!currentId) return;
-      const startup = startupsRef.current[currentId];
-      if (!startup) return;
+
+      const th = threadsRef.current[tabKey];
+      if (!th || !th.open) return;
       const mine: ChatMsg = {
         id: uid(),
         fromId: me.id,
@@ -199,39 +397,95 @@ export default function FloorPage({ params }: { params: { id: string } }) {
         text,
         ts: Date.now(),
         scope: "dm",
-        peerId: `npc:${currentId}`,
+        peerId: th.kind === "player" ? th.peerId : `npc:${th.startupId}`,
       };
-      setDms((prev) => ({
-        ...prev,
-        [currentId]: [...(prev[currentId] ?? []), mine],
-      }));
-      setTypingFor(currentId);
-      // One timer per DM thread — replies to booth A must survive a quick hop to booth B.
-      if (replyTimers.current[currentId]) clearTimeout(replyTimers.current[currentId]);
-      replyTimers.current[currentId] = setTimeout(() => {
-        delete replyTimers.current[currentId];
+      setThreads((prev) => {
+        const cur = prev[tabKey];
+        if (!cur) return prev;
+        return {
+          ...prev,
+          [tabKey]: {
+            ...cur,
+            msgs: [...cur.msgs, mine],
+            typing: cur.kind === "npc" ? true : cur.typing,
+          },
+        };
+      });
+      actions.completeOnboarding("talk");
+
+      if (th.kind === "player") {
+        // Local-append + filter the server echo (same policy as the floor tab).
+        if (th.peerId) netRef.current?.sendChat(text, "dm", th.peerId);
+        return;
+      }
+
+      // NPC thread: schedule the founder's reply.
+      const sid = th.startupId;
+      if (!sid) return;
+      if (replyTimers.current[sid]) clearTimeout(replyTimers.current[sid]);
+      replyTimers.current[sid] = setTimeout(() => {
+        delete replyTimers.current[sid];
+        const startup = startupsRef.current[sid];
+        if (!startup) return;
+        const key = `npc:${sid}`;
         const reply: ChatMsg = {
           id: uid(),
-          fromId: `npc:${currentId}`,
+          fromId: key,
           from: startup.founder,
           text: replyFor(startup, text),
           ts: Date.now(),
           scope: "dm",
-          peerId: `npc:${currentId}`,
+          peerId: key,
         };
-        setDms((prev) => ({
-          ...prev,
-          [currentId]: [...(prev[currentId] ?? []), reply],
-        }));
-        setTypingFor((t) => (t === currentId ? null : t));
+        setThreads((prev) => {
+          const cur = prev[key];
+          if (!cur) return prev;
+          return {
+            ...prev,
+            [key]: {
+              ...cur,
+              typing: false,
+              msgs: [...cur.msgs, reply],
+              unread: cur.open && tabRef.current !== key ? true : cur.unread,
+            },
+          };
+        });
+        handleRef.current?.showBubble(key, reply.text);
       }, 600 + Math.random() * 300);
     },
-    [],
+    [actions],
   );
 
   const handleFocusChange = useCallback((focused: boolean) => {
     handleRef.current?.setInputEnabled(!focused);
   }, []);
+
+  const handleEmote = useCallback(
+    (kind: EmoteKind) => {
+      handleRef.current?.emote(kind);
+      actions.completeOnboarding("emote");
+    },
+    [actions],
+  );
+
+  // Demo Night badge — granted once, while the event is live on this floor.
+  const handleEventLive = useCallback(() => {
+    if (badgesRef.current.includes("demo-night")) return;
+    actions.grantBadge("demo-night");
+    showToast("Demo Night, live, and you're in the room. Badge earned.");
+  }, [actions, showToast]);
+
+  // First-steps badge — fires once when the fourth step lands.
+  useEffect(() => {
+    if (!ready) return;
+    if (
+      state.onboarding.length >= ONBOARDING_STEPS.length &&
+      !state.badges.includes("first-steps")
+    ) {
+      actions.grantBadge("first-steps");
+      showToast("First steps done. You look like a regular already.");
+    }
+  }, [ready, state.onboarding, state.badges, actions, showToast]);
 
   // ---- mount the game + net client ----
   useEffect(() => {
@@ -244,16 +498,98 @@ export default function FloorPage({ params }: { params: { id: string } }) {
     const net = createNetClient();
     netRef.current = net;
     const offNet = net.on((ev) => {
+      if (ev.t === "welcome") {
+        setActivity(ev.activity.slice(-MAX_ACTIVITY));
+        // Reconcile DM thread liveness against the fresh player list.
+        const present = new Set(ev.players.map((p) => p.id));
+        setThreads((prev) => {
+          let changed = false;
+          const next = { ...prev };
+          for (const th of Object.values(prev)) {
+            if (th.kind !== "player" || !th.peerId) continue;
+            const here = present.has(th.peerId) || th.peerId === net.selfId;
+            if (here === !th.left) continue;
+            next[th.key] = withPeerPresence(th, here);
+            changed = true;
+          }
+          return changed ? next : prev;
+        });
+      }
+      if (ev.t === "player_leave") {
+        const key = `player:${ev.id}`;
+        setThreads((prev) =>
+          prev[key] && !prev[key].left
+            ? { ...prev, [key]: withPeerPresence(prev[key], false) }
+            : prev,
+        );
+      }
+      if (ev.t === "player_join") {
+        const key = `player:${ev.player.id}`;
+        setThreads((prev) =>
+          prev[key]?.left ? { ...prev, [key]: withPeerPresence(prev[key], true) } : prev,
+        );
+      }
+      if (ev.t === "activity") {
+        setActivity((prev) => [...prev, ev.item].slice(-MAX_ACTIVITY));
+      }
       if (ev.t === "chat" && ev.msg.scope === "floor") {
         // Filter our own echo by the server-assigned wire identity only —
         // a second tab shares the same profile id but gets its own selfId.
         if (ev.msg.fromId !== net.selfId) setFloorMsgs((m) => [...m.slice(-199), ev.msg]);
       }
+      if (ev.t === "chat" && ev.msg.scope === "dm") {
+        // Our own echo — we already appended locally when sending.
+        if (ev.msg.fromId === net.selfId) return;
+        const peer = ev.msg.peerId ?? ev.msg.fromId;
+        if (!peer) return;
+        const key = `player:${peer}`;
+        setThreads((prev) => {
+          const existing = prev[key];
+          const unread = tabRef.current !== key;
+          if (existing) {
+            return {
+              ...prev,
+              [key]: {
+                ...existing,
+                open: true,
+                msgs: [...existing.msgs, ev.msg],
+                unread,
+              },
+            };
+          }
+          return {
+            ...prev,
+            [key]: {
+              key,
+              kind: "player",
+              label: ev.msg.from,
+              title: `${ev.msg.from} · on this floor`,
+              peerId: peer,
+              msgs: [ev.msg],
+              typing: false,
+              unread,
+              open: true,
+            },
+          };
+        });
+      }
       if (ev.t === "booth_denied") {
-        // Someone else claimed that spot first; revert our local claim.
-        actions.unclaimSpot(f.id);
-        handleRef.current?.setMyBooth(null);
-        showToast("Someone claimed that stand first. Pick another spot.");
+        // Someone else claimed that spot first. If this was a MOVE, the
+        // server still holds our previous spot — restore it locally and
+        // re-announce so every state (server, net client, room) reconverges
+        // instead of leaving a ghost stand behind.
+        const prev = prevClaimRef.current;
+        if (prev && prev.spotIndex !== ev.spotIndex) {
+          actions.claimSpot(f.id, prev.spotIndex);
+          handleRef.current?.setMyBooth(prev);
+          netRef.current?.sendBoothSet(prev);
+          showToast("Someone claimed that spot first. Your stand stays put.");
+        } else {
+          actions.unclaimSpot(f.id);
+          handleRef.current?.setMyBooth(null);
+          netRef.current?.sendBoothClear();
+          showToast("Someone claimed that stand first. Pick another spot.");
+        }
       }
     });
 
@@ -265,10 +601,11 @@ export default function FloorPage({ params }: { params: { id: string } }) {
     const handle = createGame({
       canvas,
       floor: f,
-      me: profileRef.current,
+      me: profileRef.current, // includes the optional status line
       myStartup: mine,
       myClaim,
       startups: startupsRef.current,
+      idleLines: IDLE_LINES,
       net,
       cb: {
         onNearBooth: (b) => {
@@ -276,10 +613,17 @@ export default function FloorPage({ params }: { params: { id: string } }) {
           const active = activeBoothRef.current;
           if (!active) return;
           if (!b || b.spotIndex !== active.spotIndex) {
-            // Walked away — the card and the conversation close behind you.
+            // Walked away — the card and the NPC conversation close behind
+            // you. Closing hides the thread; its history survives.
             setActiveBooth(null);
-            setDmStartupId(null);
-            setTab("floor");
+            const s = active.startup;
+            if (s && !active.isYours && !active.ownerId) {
+              const key = `npc:${s.id}`;
+              setThreads((prev) =>
+                prev[key]?.open ? { ...prev, [key]: { ...prev[key], open: false } } : prev,
+              );
+              setTab((t) => (t === key ? "floor" : t));
+            }
           } else {
             // Same stand, fresh instance (the floor was rebuilt) — keep the
             // card but point it at current data.
@@ -292,35 +636,26 @@ export default function FloorPage({ params }: { params: { id: string } }) {
           // Live-claimed stands have a real owner walking the floor, and your
           // own booth has you.
           if (b.startup && !b.isYours && !b.ownerId) {
-            const s = b.startup;
-            setDms((prev) =>
-              prev[s.id]
-                ? prev
-                : {
-                    ...prev,
-                    [s.id]: [
-                      {
-                        id: uid(),
-                        fromId: `npc:${s.id}`,
-                        from: s.founder,
-                        text: replyFor(s, ""),
-                        ts: Date.now(),
-                        scope: "dm",
-                        peerId: `npc:${s.id}`,
-                      },
-                    ],
-                  },
-            );
-            setDmStartupId(s.id);
-            setTab("dm");
+            openNpcThread(b.startup);
           }
         },
         onPresence: (count, online) => setPresence({ count, online }),
+        onHover: (t) => setHover(t),
+        onPlayerClick: (p) => openPlayerThread(p.id, p.name),
+        onFirstAction: (kind) => actions.completeOnboarding(kind),
       },
     });
     handleRef.current = handle;
     // The engine owns the connection: createGame() already called net.connect()
     // with its collision-aware spawn point — connecting again here would double-join.
+
+    // Directory deep link: /floor/<id>?booth=<startupId> auto-walks you from
+    // the spawn point up to the booth you searched for.
+    const boothParam = new URLSearchParams(window.location.search).get("booth");
+    if (boothParam) {
+      const spotIndex = f.startupIds.indexOf(boothParam);
+      if (spotIndex >= 0) handle.walkToBooth(spotIndex);
+    }
 
     // strict-mode double-mount is handled by this cleanup running between passes
     return () => {
@@ -332,7 +667,7 @@ export default function FloorPage({ params }: { params: { id: string } }) {
       for (const t of Object.values(replyTimers.current)) clearTimeout(t);
       replyTimers.current = {};
     };
-  }, [allowed, params.id, actions, showToast]);
+  }, [allowed, params.id, actions, showToast, openNpcThread, openPlayerThread]);
 
   useEffect(() => {
     return () => {
@@ -401,19 +736,41 @@ export default function FloorPage({ params }: { params: { id: string } }) {
   }
 
   // ---- the game ----
-  const dmStartup = dmStartupId ? startups[dmStartupId] : undefined;
-  const dmThread = dmStartup
-    ? {
-        startup: dmStartup,
-        msgs: dms[dmStartup.id] ?? [],
-        typing: typingFor === dmStartup.id,
-        connected: connectedIds.has(dmStartup.id),
-      }
-    : null;
+  const openThreads: ChatThread[] = Object.values(threads)
+    .filter((t) => t.open)
+    .map((t) => ({
+      key: t.key,
+      kind: t.kind,
+      label: t.label,
+      title: t.title,
+      msgs: t.msgs,
+      typing: t.typing,
+      unread: t.unread,
+      left: t.left ?? false,
+      connected:
+        t.kind === "npc"
+          ? t.startupId !== undefined && connectedIds.has(t.startupId)
+          : state.connections.some((c) =>
+              t.peerId
+                ? c.peerId === t.peerId
+                : c.startupId === undefined && c.peerId === undefined && c.name === t.label,
+            ),
+    }));
+
   const myIds = [
     state.profile.id,
     ...(netRef.current ? [netRef.current.selfId] : []),
   ];
+
+  const showOnboarding = state.onboarding.length < ONBOARDING_STEPS.length;
+
+  // Guestbook key: startup id for seed booths, "spot:<i>" for claimed stands.
+  const guestbookKey =
+    activeBooth && activeBooth.startup
+      ? activeBooth.isYours || activeBooth.ownerId
+        ? `spot:${activeBooth.spotIndex}`
+        : activeBooth.startup.id
+      : null;
 
   return (
     <div className="fixed inset-0 z-50 bg-paper">
@@ -424,10 +781,13 @@ export default function FloorPage({ params }: { params: { id: string } }) {
       />
 
       {/* top bar */}
-      <div className="pointer-events-none absolute inset-x-3 top-3 flex items-start justify-between gap-3">
-        <div className="panel pointer-events-auto flex items-center gap-3 px-3 py-2 shadow-card">
-          <span className="font-display text-base leading-none">{floor.name}</span>
-          <TierTag tier={floor.tier} />
+      <div className="pointer-events-none absolute inset-x-3 top-3 flex flex-wrap items-start justify-between gap-2">
+        <div className="pointer-events-auto flex flex-wrap items-center gap-2">
+          <span className="panel flex items-center gap-3 px-3 py-2 shadow-card">
+            <span className="font-display text-base leading-none">{floor.name}</span>
+            <TierTag tier={floor.tier} />
+          </span>
+          <EventPill floorId={floor.id} onLiveHere={handleEventLive} />
         </div>
         <div className="pointer-events-auto flex items-center gap-2">
           <span className="panel flex items-center gap-2 px-3 py-2 text-xs text-muted shadow-card">
@@ -450,24 +810,34 @@ export default function FloorPage({ params }: { params: { id: string } }) {
         </div>
       </div>
 
-      {/* controls hint */}
-      <div className="pointer-events-none absolute bottom-3 right-3">
-        <span className="panel px-3 py-1.5 text-xs text-muted shadow-card">
-          WASD / arrows to walk · E to talk
-        </span>
+      {/* activity ticker — one muted line, center, under the top bar
+          (the top bar wraps to two rows on narrow screens, so sit lower there) */}
+      <div className="pointer-events-none absolute inset-x-3 top-24 flex justify-center sm:top-16">
+        <ActivityTicker items={activity} />
       </div>
+
+      {/* first-session checklist */}
+      {showOnboarding && (
+        <div className="pointer-events-none absolute left-3 top-36 sm:top-16">
+          <OnboardingCard done={state.onboarding} />
+        </div>
+      )}
 
       {/* interact hint */}
       {nearBooth && !activeBooth && (
-        <div className="pointer-events-none absolute bottom-16 left-1/2 -translate-x-1/2">
+        <div className="pointer-events-none absolute bottom-24 left-1/2 -translate-x-1/2">
           <span className="panel px-3 py-1.5 text-sm shadow-card">
-            <kbd className="micro mr-2 rounded-sm border border-line px-1 py-0.5 text-muted">
-              E
-            </kbd>
+            {!coarse && (
+              <kbd className="micro mr-2 rounded-sm border border-line px-1 py-0.5 text-muted">
+                E
+              </kbd>
+            )}
             {nearBooth.startup
               ? nearBooth.isYours
                 ? "your stand"
-                : `talk to ${nearBooth.startup.name}`
+                : coarse
+                  ? `tap to talk to ${nearBooth.startup.name}`
+                  : `talk to ${nearBooth.startup.name}`
               : "open stand"}
           </span>
         </div>
@@ -478,14 +848,41 @@ export default function FloorPage({ params }: { params: { id: string } }) {
         <div className="pointer-events-none absolute right-3 top-16">
           {activeBooth.startup ? (
             <BoothCard
-              startup={startups[activeBooth.startup.id] ?? activeBooth.startup}
+              // A live player's stand carries its own startup data — never
+              // resolve it through the local startups map, where every
+              // client's own startup shares the same id.
+              startup={
+                activeBooth.ownerId && !activeBooth.isYours
+                  ? activeBooth.startup
+                  : startups[activeBooth.startup.id] ?? activeBooth.startup
+              }
               isYours={activeBooth.isYours}
               live={Boolean(activeBooth.ownerId) && !activeBooth.isYours}
-              connected={connectedIds.has(activeBooth.startup.id)}
-              onConnect={() => activeBooth.startup && handleConnect(activeBooth.startup)}
-              onChat={() => activeBooth.startup && openDm(activeBooth.startup)}
+              connected={
+                activeBooth.ownerId && !activeBooth.isYours
+                  ? state.connections.some((c) => c.peerId === activeBooth.ownerId)
+                  : connectedIds.has(activeBooth.startup.id)
+              }
+              onConnect={() =>
+                activeBooth.startup &&
+                handleConnect(
+                  activeBooth.startup,
+                  activeBooth.isYours ? undefined : activeBooth.ownerId,
+                )
+              }
+              onChat={() => activeBooth.startup && openNpcThread(activeBooth.startup)}
               onUnclaim={activeBooth.isYours ? handleUnclaim : undefined}
               onClose={() => setActiveBooth(null)}
+              guestbook={
+                guestbookKey
+                  ? {
+                      net: netRef.current,
+                      floorId: floor.id,
+                      boothKey: guestbookKey,
+                      onFocusChange: handleFocusChange,
+                    }
+                  : undefined
+              }
             />
           ) : (
             <OpenStandCard
@@ -499,19 +896,51 @@ export default function FloorPage({ params }: { params: { id: string } }) {
         </div>
       )}
 
-      {/* chat */}
-      <div className="pointer-events-none absolute bottom-3 left-3">
-        <ChatPanel
-          tab={tab}
-          onTab={setTab}
-          floorMsgs={floorMsgs}
-          dm={dmThread}
-          myIds={myIds}
-          onSend={handleSend}
-          onFocusChange={handleFocusChange}
-          onConnect={handleConnect}
-        />
+      {/* bottom HUD: chat (left), emotes (center), controls hint (right) */}
+      <div className="pointer-events-none absolute inset-x-3 bottom-3 flex flex-col items-center gap-2 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-end">
+        <div className="order-3 flex w-full justify-start sm:order-none sm:w-auto">
+          <ChatPanel
+            tab={tab}
+            onTab={handleTab}
+            floorMsgs={floorMsgs}
+            threads={openThreads}
+            myIds={myIds}
+            onSend={handleSend}
+            onFocusChange={handleFocusChange}
+            onConnect={connectThreadKey}
+            onClose={closeThread}
+          />
+        </div>
+        <div className="order-2 flex items-stretch gap-2 sm:order-none">
+          <EmoteBar onEmote={handleEmote} />
+          {coarse && (
+            <button
+              type="button"
+              aria-pressed={minimapOn}
+              onClick={() => {
+                const next = !minimapOn;
+                setMinimapOn(next);
+                handleRef.current?.setMinimap(next);
+              }}
+              className={`panel pointer-events-auto px-3 text-xs shadow-card ${
+                minimapOn ? "text-ink" : "text-muted"
+              }`}
+            >
+              map
+            </button>
+          )}
+        </div>
+        <div className="order-1 flex sm:order-none sm:justify-end">
+          <span className="panel px-3 py-1.5 text-xs text-muted shadow-card">
+            {coarse
+              ? "tap to walk · tap a booth to talk"
+              : "WASD / arrows to walk · E to talk · M for map"}
+          </span>
+        </div>
       </div>
+
+      {/* hover card — desktop pointer only by nature */}
+      <HoverCard target={hover} startups={startups} />
 
       <Toast toast={toast} />
     </div>

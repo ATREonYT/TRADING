@@ -2,7 +2,9 @@
  * FounderFloor — WebSocket net client (browser-only transport).
  *
  * Implements the NetClient contract in lib/types.ts against the floor server
- * in server/index.mjs. Every method is a safe no-op during SSR.
+ * in server/index.mjs. Every method is a safe no-op during SSR. Also exports
+ * httpBase() — the server's HTTP origin for GET /presence and GET /guestbook,
+ * derived from the same source as the ws URL.
  *
  * Offline behavior:
  * - If the socket never opens at all, one {t:"status", online:false, count:1}
@@ -13,10 +15,30 @@
  *   the last known MoveState. If both fail, it goes dormant.
  */
 
-import type { BoothClaim, MoveState, NetClient, NetEvent, PlayerProfile } from "@/lib/types";
+import type { BoothClaim, EmoteKind, MoveState, NetClient, NetEvent, PlayerProfile } from "@/lib/types";
 
 const RECONNECT_ATTEMPTS = 2;
 const RECONNECT_DELAY_MS = 3000;
+
+/**
+ * HTTP origin of the floor server (same host/port as the ws endpoint), e.g.
+ * "http://host:3001" — for GET /presence and GET /guestbook. Derived exactly
+ * like the ws URL: NEXT_PUBLIC_WS_URL with a ws->http scheme swap when set,
+ * otherwise the page's hostname on :3001. Returns "" during SSR, and for an
+ * unparsable NEXT_PUBLIC_WS_URL (which would leave the ws client offline too).
+ */
+export function httpBase(): string {
+  if (typeof window === "undefined") return ""; // SSR — no origin to derive
+  const env = process.env.NEXT_PUBLIC_WS_URL;
+  if (env) {
+    try {
+      return new URL(env.replace(/^wss:/i, "https:").replace(/^ws:/i, "http:")).origin;
+    } catch {
+      return "";
+    }
+  }
+  return `${window.location.protocol === "https:" ? "https" : "http"}://${window.location.hostname}:3001`;
+}
 
 type Phase =
   | "idle" // created, connect() not called yet
@@ -167,6 +189,8 @@ export function createNetClient(wsUrl?: string): NetClient {
       reconnectAttempt = false;
       attemptsLeft = RECONNECT_ATTEMPTS; // a future outage gets a fresh budget
       if (me && lastMove) {
+        // player is the full profile — id/name/look plus the optional status
+        // line, which the server relays on join and hover cards read.
         // JSON.stringify drops the claim key when it is null -> undefined.
         sock.send(JSON.stringify({ t: "join", player: me, s: lastMove, claim: myClaim ?? undefined }));
       }
@@ -258,6 +282,23 @@ export function createNetClient(wsUrl?: string): NetClient {
       if (phase !== "open" || !ws || ws.readyState !== ws.OPEN) return;
       // JSON.stringify drops the peerId key when it is undefined.
       ws.send(JSON.stringify({ t: "chat", text, scope, peerId }));
+    },
+
+    sendEmote(kind: EmoteKind): void {
+      // The server echoes {t:"emote"} back to the sender, so local and remote
+      // bubbles share one render path. Offline this is a pure no-op — the
+      // engine draws the local bubble itself.
+      if (phase !== "open" || !ws || ws.readyState !== ws.OPEN) return;
+      ws.send(JSON.stringify({ t: "emote", kind }));
+    },
+
+    sendSign(key: string, text: string, boothName?: string): void {
+      // The server validates/caps the entry and broadcasts {t:"guestbook"} to
+      // the floor (sender included). Offline this is a pure no-op — the UI
+      // disables the sign form while the floor server is unreachable.
+      if (phase !== "open" || !ws || ws.readyState !== ws.OPEN) return;
+      // JSON.stringify drops the boothName key when it is undefined.
+      ws.send(JSON.stringify({ t: "sign", key, text, boothName }));
     },
 
     on(cb: (ev: NetEvent) => void): () => void {

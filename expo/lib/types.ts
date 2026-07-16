@@ -235,8 +235,12 @@ export interface NetClient {
   sendBoothClear(): void;
   /** Fire a reaction; the server broadcasts it (echo included). */
   sendEmote(kind: EmoteKind): void;
-  /** Sign a booth's guestbook. key = `${spotIndex}` for claimed stands, or the startup id for seed booths. */
-  sendSign(key: string, text: string): void;
+  /**
+   * Sign a booth's guestbook. key = `spot:${spotIndex}` for claimed stands, or
+   * the startup id for seed booths. boothName (<= 40 chars) is the booth's
+   * display name — the server embeds it in the activity ticker line.
+   */
+  sendSign(key: string, text: string, boothName?: string): void;
   /** Subscribe to events; returns an unsubscribe function. */
   on(cb: (ev: NetEvent) => void): () => void;
 }
@@ -268,8 +272,8 @@ export interface GameCallbacks {
   onHover?(target: HoverTarget | null): void;
   /** A remote player's avatar was clicked/tapped (open a DM with them). */
   onPlayerClick?(player: { id: string; name: string }): void;
-  /** First-session progress: fired once per action kind ("move" | "talk" | "emote"). */
-  onFirstAction?(kind: "move" | "talk" | "emote"): void;
+  /** First-session progress: fired once per action kind ("move" | "emote"). */
+  onFirstAction?(kind: "move" | "emote"): void;
 }
 
 export interface GameOptions {
@@ -313,6 +317,11 @@ export interface GameHandle {
   showBubble(entityId: string, text: string): void;
   /** Toggle the minimap overlay (also bound to the M key in-game). */
   setMinimap(v: boolean): void;
+  /**
+   * Auto-walk the player up to a booth spot (index into floor.boothSpots),
+   * e.g. deep-linked from the directory's "Walk there". Unknown indexes no-op.
+   */
+  walkToBooth(spotIndex: number): void;
 }
 
 // ---------- client persistence (lib/store.ts) ----------
@@ -323,6 +332,11 @@ export interface Connection {
   founder?: string;
   ts: number;
   floorId: string;
+  /**
+   * Wire id of the live person behind this connection (live-claimed stands
+   * and player DMs). Names collide; this is the dedupe key when present.
+   */
+  peerId?: string;
   /** Personal note ("met at demo night, follow up re: pricing"). */
   note?: string;
 }

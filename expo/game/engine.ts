@@ -2,17 +2,22 @@
  * FounderFloor — canvas game engine.
  * Owns the render loop, input, collision, camera, remote players and
  * founder NPCs. Pixel art is rendered at 2x world zoom with image
- * smoothing off; UI text (name labels, the "!" nudge) is drawn in
- * screen space so it stays sharp.
+ * smoothing off; UI text (name labels, chat bubbles, the "!" nudge,
+ * the minimap) is drawn in screen space so it stays sharp.
+ *
+ * Liveness layer: chat/emote bubbles, click/tap-to-walk pathfinding,
+ * hover cards, a bottom-right minimap, and ambient NPC chatter.
  */
 
-import { TILE } from "../lib/types";
+import { EMOTES, TILE } from "../lib/types";
 import type {
   BoothClaim,
   BoothInstance,
   Dir,
+  EmoteKind,
   GameHandle,
   GameOptions,
+  HoverTarget,
   MoveState,
   NetEvent,
   RemotePlayer,
@@ -21,17 +26,34 @@ import { SPRITE_H, SPRITE_W, SpriteBank } from "./sprites";
 import type { AvatarFrames } from "./sprites";
 import { buildFloor } from "./tilemap";
 import type { Cam, ClaimEntry, Drawable } from "./tilemap";
-import { makeNpcs, updateNpcs } from "./npc";
+import { AmbientDirector, makeNpcs, updateNpcs } from "./npc";
 import type { Npc } from "./npc";
+import { BubbleManager } from "./bubbles";
+import { findPath } from "./path";
 
 const ZOOM = 2; // world px -> screen px
 const SPEED = 140; // player px/s
 const LERP_RATE = 12; // remote interpolation, fraction/s
 const SEND_INTERVAL = 0.1; // 10 packets/s while moving
 const WALK_FPS = 7;
+const HOVER_INTERVAL_MS = 66; // hover hit-tests at ~15/s
+const REPATH_COOLDOWN_MS = 400;
+const MINIMAP_MAX_W = 160;
+const MINIMAP_MAX_H = 120;
+const MINIMAP_INSET = 12;
+const MINIMAP_BOTTOM = 56; // keep clear of the controls hint (fine pointers)
+const MINIMAP_TOP_COARSE = 148; // below the top bar + ticker; the mobile HUD owns the bottom
+const LABEL_H = 14;
+const LABEL_H_STATUS = 25;
+
+const EMOTE_CHARS: Record<EmoteKind, string> = EMOTES.reduce((acc, e) => {
+  acc[e.kind] = e.char;
+  return acc;
+}, {} as Record<EmoteKind, string>);
 
 interface Remote {
   name: string;
+  status?: string;
   frames: AvatarFrames;
   x: number;
   y: number;
@@ -66,6 +88,17 @@ export function createGame(opts: GameOptions): GameHandle {
   let npcs: Npc[] = makeNpcs(built.booths, bank);
   const mapW = built.widthPx;
   const mapH = built.heightPx;
+
+  // ---------- liveness: bubbles + ambient NPC chatter ----------
+
+  const bubbles = new BubbleManager();
+  const director = new AmbientDirector(opts.idleLines ?? {}, {
+    say: (npc, line) => bubbles.showChat(npc.bubbleId, line, performance.now()),
+    emote: (npc, kind) => bubbles.showEmote(npc.bubbleId, EMOTE_CHARS[kind], performance.now()),
+  });
+
+  let firstMoveDone = false;
+  let firstEmoteDone = false;
 
   // ---------- collision ----------
 
@@ -106,14 +139,98 @@ export function createGame(opts: GameOptions): GameHandle {
   const player: MoveState = { x: spawn.x, y: spawn.y, dir: "up", moving: false };
   let playerAnimT = 0;
 
+  // ---------- click/tap-to-walk path ----------
+
+  let path: { x: number; y: number }[] | null = null;
+  let pathIdx = 0;
+  let pathGoal: { x: number; y: number } | null = null;
+  let lastRepathMs = -1e9;
+
+  const clearPath = (): void => {
+    path = null;
+    pathIdx = 0;
+    pathGoal = null;
+  };
+
+  const startPathTo = (tx: number, ty: number): void => {
+    const p = findPath(
+      floor.width,
+      floor.height,
+      built.solid,
+      { x: Math.floor(player.x / TILE), y: Math.floor(player.y / TILE) },
+      { x: tx, y: ty }
+    );
+    if (p && p.length > 0) {
+      path = p;
+      pathIdx = 0;
+      pathGoal = { x: tx, y: ty };
+    } else {
+      clearPath();
+    }
+  };
+
+  // the current segment turned out blocked (rare; e.g. mid-rebuild) — try once
+  const repath = (): void => {
+    const goal = pathGoal;
+    const now = performance.now();
+    clearPath();
+    if (!goal || now - lastRepathMs < REPATH_COOLDOWN_MS) return;
+    lastRepathMs = now;
+    startPathTo(goal.x, goal.y);
+  };
+
+  /** Walk toward the next waypoint; returns whether the player moved. */
+  const followPath = (dt: number): boolean => {
+    if (!path) return false;
+    const wp = path[pathIdx];
+    const wpx = wp.x * TILE + TILE / 2;
+    const wpy = wp.y * TILE + TILE / 2;
+    const dx = wpx - player.x;
+    const dy = wpy - player.y;
+    const stepLen = SPEED * dt;
+    let moved = false;
+    if (Math.abs(dx) > 0.5) {
+      const mv = Math.sign(dx) * Math.min(stepLen, Math.abs(dx));
+      if (blocked(player.x + mv, player.y)) {
+        repath();
+        return false;
+      }
+      player.x += mv;
+      player.dir = dx > 0 ? "right" : "left";
+      moved = true;
+    } else if (Math.abs(dy) > 0.5) {
+      const mv = Math.sign(dy) * Math.min(stepLen, Math.abs(dy));
+      if (blocked(player.x, player.y + mv)) {
+        repath();
+        return false;
+      }
+      player.y += mv;
+      player.dir = dy > 0 ? "down" : "up";
+      moved = true;
+    }
+    if (path && Math.abs(wpx - player.x) <= 0.5 && Math.abs(wpy - player.y) <= 0.5) {
+      pathIdx++;
+      if (pathIdx >= path.length) clearPath();
+    }
+    return moved;
+  };
+
   // ---------- net ----------
 
   const remotes = new Map<string, Remote>();
   const presence = (): void => cb.onPresence(1 + remotes.size, net.online);
+  /**
+   * Wire ids this client has held before (a reconnect can be re-suffixed by
+   * the server while the old socket awaits the heartbeat reaper). Only these
+   * are dropped as our own ghosts — another tab sharing the profile id is a
+   * real, visible player.
+   */
+  const prevSelfIds = new Set<string>();
   const addRemote = (p: RemotePlayer): void => {
-    if (p.id === net.selfId || p.id === me.id) return;
+    if (p.id === net.selfId || prevSelfIds.has(p.id)) return;
     remotes.set(p.id, {
       name: p.name,
+      status: p.status,
       frames: bank.makeAvatar(p.look),
       x: p.s.x,
       y: p.s.y,
@@ -129,8 +246,11 @@ export function createGame(opts: GameOptions): GameHandle {
         for (const p of ev.players) addRemote(p);
         remoteClaims.clear();
         for (const b of ev.booths) {
-          if (b.ownerId !== net.selfId) remoteClaims.set(b.ownerId, b.claim);
+          if (b.ownerId !== net.selfId && !prevSelfIds.has(b.ownerId)) {
+            remoteClaims.set(b.ownerId, b.claim);
+          }
         }
+        prevSelfIds.add(net.selfId); // a later reconnect can filter this ghost
         rebuild();
         presence();
         break;
@@ -145,6 +265,7 @@ export function createGame(opts: GameOptions): GameHandle {
       }
       case "player_leave":
         remotes.delete(ev.id);
+        bubbles.remove(ev.id);
         // their stand packs up with them
         if (remoteClaims.delete(ev.id)) rebuild();
         presence();
@@ -160,6 +281,12 @@ export function createGame(opts: GameOptions): GameHandle {
         break;
       case "booth_denied":
         break; // the UI reverts the claim and explains
+      case "emote":
+        // own emotes are rendered at send time; the echo must not double-render
+        if (ev.id !== net.selfId && remotes.has(ev.id)) {
+          bubbles.showEmote(ev.id, EMOTE_CHARS[ev.kind], performance.now());
+        }
+        break;
       case "status":
         if (!ev.online) {
           remotes.clear();
@@ -171,7 +298,14 @@ export function createGame(opts: GameOptions): GameHandle {
         presence();
         break;
       case "chat":
-        break; // chat is the UI's problem
+        // remote floor chat auto-bubbles; the transcript is the UI's problem
+        if (ev.msg.scope === "floor" && remotes.has(ev.msg.fromId)) {
+          bubbles.showChat(ev.msg.fromId, ev.msg.text, performance.now());
+        }
+        break;
+      case "guestbook":
+      case "activity":
+        break; // surfaced by the UI, not the canvas
     }
   });
   net.connect(floor.id, me, { ...player }, myClaim ?? undefined);
@@ -182,6 +316,11 @@ export function createGame(opts: GameOptions): GameHandle {
   // ---------- input ----------
 
   let inputEnabled = true;
+  let minimapOn = false; // real default set after the first resize below
+  const coarsePointer =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(pointer: coarse)").matches;
   const keys = new Set<string>();
   const keyOf = (k: string): string | null => {
     switch (k) {
@@ -208,6 +347,10 @@ export function createGame(opts: GameOptions): GameHandle {
 
   const onKeyDown = (e: KeyboardEvent): void => {
     if (!inputEnabled) return;
+    if (e.key === "m" || e.key === "M") {
+      minimapOn = !minimapOn;
+      return;
+    }
     if (e.key === "e" || e.key === "E" || e.key === "Enter") {
       if (nearBooth) {
         e.preventDefault();
@@ -219,6 +362,7 @@ export function createGame(opts: GameOptions): GameHandle {
     if (k) {
       e.preventDefault();
       keys.add(k);
+      clearPath(); // manual steering always wins over tap-to-walk
     }
   };
   const onKeyUp = (e: KeyboardEvent): void => {
@@ -262,6 +406,21 @@ export function createGame(opts: GameOptions): GameHandle {
       player.x = p.x;
       player.y = p.y;
     }
+    // a rebuild can invalidate the walking path — re-route to the same goal
+    if (path && pathGoal) {
+      let ok = true;
+      for (let i = pathIdx; i < path.length; i++) {
+        if (built.solid(path[i].x, path[i].y)) {
+          ok = false;
+          break;
+        }
+      }
+      if (!ok) {
+        const goal = pathGoal;
+        clearPath();
+        startPathTo(goal.x, goal.y);
+      }
+    }
     // old BoothInstance references are stale — recompute and re-announce
     const prevIdx = nearBooth ? nearBooth.spotIndex : -1;
     nearBooth = computeNear();
@@ -269,22 +428,129 @@ export function createGame(opts: GameOptions): GameHandle {
     if (nearBooth || newIdx !== prevIdx) cb.onNearBooth(nearBooth);
   }
 
-  const onClick = (e: MouseEvent): void => {
-    const r = canvas.getBoundingClientRect();
-    const wx = cam.x + (e.clientX - r.left) / ZOOM;
-    const wy = cam.y + (e.clientY - r.top) / ZOOM;
+  // ---------- pointer: tap-to-walk, player taps, hover cards ----------
+
+  const hitAvatar = (wx: number, wy: number, ax: number, ay: number): boolean =>
+    wx >= ax - SPRITE_W / 2 - 1 &&
+    wx <= ax + SPRITE_W / 2 + 1 &&
+    wy >= ay - SPRITE_H - 2 &&
+    wy <= ay + 2;
+
+  const boothAtTile = (tx: number, ty: number): BoothInstance | null => {
+    for (const b of built.booths) {
+      if (tx >= b.spot.x && tx < b.spot.x + 4 && ty >= b.spot.y && ty < b.spot.y + 3) return b;
+    }
+    return null;
+  };
+
+  const onPointerDown = (e: PointerEvent): void => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    const rct = canvas.getBoundingClientRect();
+    const wx = cam.x + (e.clientX - rct.left) / ZOOM;
+    const wy = cam.y + (e.clientY - rct.top) / ZOOM;
+    // 1) a remote player's avatar -> open a DM
+    for (const [id, r] of remotes) {
+      if (hitAvatar(wx, wy, r.x, r.y)) {
+        cb.onPlayerClick?.({ id, name: r.name });
+        return;
+      }
+    }
+    // 2) a booth you're already close to -> interact
     const tx = Math.floor(wx / TILE);
     const ty = Math.floor(wy / TILE);
-    const ptx = Math.floor(player.x / TILE);
-    const pty = Math.floor(player.y / TILE);
-    for (const b of built.booths) {
-      const inRect =
-        tx >= b.spot.x && tx < b.spot.x + 4 && ty >= b.spot.y && ty < b.spot.y + 3;
-      if (!inRect) continue;
-      // walking over is the point: clicks only land if you're already close
-      if (withinRing(b, ptx, pty)) cb.onInteract(b);
-      return;
+    const b = boothAtTile(tx, ty);
+    if (b) {
+      const ptx = Math.floor(player.x / TILE);
+      const pty = Math.floor(player.y / TILE);
+      if (withinRing(b, ptx, pty)) {
+        clearPath();
+        cb.onInteract(b);
+        return;
+      }
     }
+    // 3) anywhere else -> walk there (solid tiles resolve to the nearest
+    //    reachable neighbor, so tapping a far booth walks you up to it)
+    if (!inputEnabled) return;
+    startPathTo(tx, ty);
+  };
+
+  let hoverKey = "";
+  let hoverAnchorX = 0;
+  let hoverAnchorY = 0;
+  let lastHoverMs = 0;
+
+  const hoverAt = (cx: number, cy: number): HoverTarget | null => {
+    const wx = cam.x + cx / ZOOM;
+    const wy = cam.y + cy / ZOOM;
+    for (const [id, r] of remotes) {
+      if (hitAvatar(wx, wy, r.x, r.y)) {
+        return {
+          kind: "player",
+          id,
+          name: r.name,
+          status: r.status,
+          x: (r.x - cam.x) * ZOOM,
+          y: (r.y - SPRITE_H - cam.y) * ZOOM,
+        };
+      }
+    }
+    for (const n of npcs) {
+      if (hitAvatar(wx, wy, n.x, n.y)) {
+        return {
+          kind: "npc",
+          startupId: n.startupId,
+          name: n.name,
+          x: (n.x - cam.x) * ZOOM,
+          y: (n.y - SPRITE_H - cam.y) * ZOOM,
+        };
+      }
+    }
+    const b = boothAtTile(Math.floor(wx / TILE), Math.floor(wy / TILE));
+    if (b) {
+      return {
+        kind: "booth",
+        booth: b,
+        x: ((b.spot.x + 2) * TILE - cam.x) * ZOOM,
+        y: (b.spot.y * TILE - 8 - cam.y) * ZOOM,
+      };
+    }
+    return null;
+  };
+
+  const onPointerMove = (e: PointerEvent): void => {
+    if (e.pointerType === "touch") return; // no hover on coarse pointers
+    const now = performance.now();
+    if (now - lastHoverMs < HOVER_INTERVAL_MS) return;
+    lastHoverMs = now;
+    const rct = canvas.getBoundingClientRect();
+    const t = hoverAt(e.clientX - rct.left, e.clientY - rct.top);
+    const key =
+      t === null
+        ? ""
+        : t.kind === "player"
+          ? `p:${t.id}`
+          : t.kind === "npc"
+            ? `n:${t.startupId}`
+            : `b:${t.booth.spotIndex}`;
+    const drifted =
+      t !== null && (Math.abs(t.x - hoverAnchorX) > 2 || Math.abs(t.y - hoverAnchorY) > 2);
+    if (key !== hoverKey || drifted) {
+      hoverKey = key;
+      if (t) {
+        hoverAnchorX = t.x;
+        hoverAnchorY = t.y;
+      }
+      cb.onHover?.(t);
+      canvas.style.cursor = t ? "pointer" : "";
+    }
+  };
+
+  const onPointerLeave = (): void => {
+    if (hoverKey !== "") {
+      hoverKey = "";
+      cb.onHover?.(null);
+    }
+    canvas.style.cursor = "";
   };
 
   // ---------- canvas sizing ----------
@@ -308,6 +574,9 @@ export function createGame(opts: GameOptions): GameHandle {
   ro.observe(canvas);
   resize();
 
+  // minimap defaults ON only when there's more hall than viewport
+  minimapOn = mapW > cssW / ZOOM || mapH > cssH / ZOOM;
+
   // ---------- camera ----------
 
   const cam: Cam = { x: 0, y: 0, w: cssW / ZOOM, h: cssH / ZOOM };
@@ -317,7 +586,7 @@ export function createGame(opts: GameOptions): GameHandle {
   // ---------- per-frame update ----------
 
   const step = (dt: number): void => {
-    // player movement
+    // player movement: keys first; otherwise follow the tapped path
     let vx = 0;
     let vy = 0;
     if (inputEnabled) {
@@ -330,18 +599,25 @@ export function createGame(opts: GameOptions): GameHandle {
       vx *= Math.SQRT1_2;
       vy *= Math.SQRT1_2;
     }
-    const moving = vx !== 0 || vy !== 0;
-    if (moving) {
-      const nd: Dir =
-        vx < 0 ? "left" : vx > 0 ? "right" : vy < 0 ? "up" : "down";
+    const keyMoving = vx !== 0 || vy !== 0;
+    let moving = keyMoving;
+    if (keyMoving) {
+      if (path) clearPath();
+      const nd: Dir = vx < 0 ? "left" : vx > 0 ? "right" : vy < 0 ? "up" : "down";
       player.dir = nd;
       const nx = player.x + vx * SPEED * dt;
       if (!blocked(nx, player.y)) player.x = nx;
       const ny = player.y + vy * SPEED * dt;
       if (!blocked(player.x, ny)) player.y = ny;
-      playerAnimT += dt;
+    } else if (path && inputEnabled) {
+      moving = followPath(dt);
     }
+    if (moving) playerAnimT += dt;
     player.moving = moving;
+    if (moving && !firstMoveDone) {
+      firstMoveDone = true;
+      cb.onFirstAction?.("move");
+    }
 
     // movement packets: 10/s while moving, one final packet on stop
     if (moving) {
@@ -373,6 +649,7 @@ export function createGame(opts: GameOptions): GameHandle {
     }
 
     updateNpcs(npcs, dt, player.x, player.y);
+    director.update(dt, npcs);
 
     // proximity
     const nb = computeNear();
@@ -402,28 +679,100 @@ export function createGame(opts: GameOptions): GameHandle {
     );
   };
 
-  const drawLabel = (text: string, wx: number, wy: number): void => {
+  const pillPath = (bx: number, by: number, bw: number, bh: number): void => {
+    const r = Math.min(7, bh / 2);
+    ctx.beginPath();
+    ctx.moveTo(bx + r, by);
+    ctx.arcTo(bx + bw, by, bx + bw, by + bh, r);
+    ctx.arcTo(bx + bw, by + bh, bx, by + bh, r);
+    ctx.arcTo(bx, by + bh, bx, by, r);
+    ctx.arcTo(bx, by, bx + bw, by, r);
+    ctx.closePath();
+  };
+
+  const drawLabel = (name: string, status: string | undefined, wx: number, wy: number): void => {
     const sx = (wx - cam.x) * ZOOM;
     const sy = (wy - SPRITE_H - cam.y) * ZOOM - 8;
-    if (sx < -80 || sx > cssW + 80 || sy < -30 || sy > cssH + 30) return;
-    ctx.font = "10px system-ui, -apple-system, Segoe UI, sans-serif";
+    if (sx < -90 || sx > cssW + 90 || sy < -40 || sy > cssH + 40) return;
+    const st = status ? status.trim() : "";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    const tw = ctx.measureText(text).width;
-    const bw = tw + 12;
+    ctx.font = "10px system-ui, -apple-system, Segoe UI, sans-serif";
+    let w = ctx.measureText(name).width;
+    if (st) {
+      ctx.font = "9px system-ui, -apple-system, Segoe UI, sans-serif";
+      w = Math.max(w, Math.min(ctx.measureText(st).width, 140));
+    }
+    const bw = w + 12;
+    const bh = st ? LABEL_H_STATUS : LABEL_H;
     const bx = sx - bw / 2;
-    const by = sy - 14;
+    const by = sy - bh;
     ctx.fillStyle = "rgba(35,32,26,0.84)";
-    ctx.beginPath();
-    ctx.moveTo(bx + 7, by);
-    ctx.arcTo(bx + bw, by, bx + bw, by + 14, 7);
-    ctx.arcTo(bx + bw, by + 14, bx, by + 14, 7);
-    ctx.arcTo(bx, by + 14, bx, by, 7);
-    ctx.arcTo(bx, by, bx + bw, by, 7);
-    ctx.closePath();
+    pillPath(bx, by, bw, bh);
     ctx.fill();
     ctx.fillStyle = "#FFFFFF";
-    ctx.fillText(text, sx, by + 7.5);
+    ctx.font = "10px system-ui, -apple-system, Segoe UI, sans-serif";
+    ctx.fillText(name, sx, by + 7.5);
+    if (st) {
+      ctx.fillStyle = "rgba(242,239,231,0.7)";
+      ctx.font = "9px system-ui, -apple-system, Segoe UI, sans-serif";
+      ctx.fillText(st, sx, by + 18, 140);
+    }
+  };
+
+  /** Screen-space y of a bubble's tail tip, sitting just above the name pill. */
+  const bubbleTailY = (wy: number, labelH: number): number => {
+    const headTop = (wy - SPRITE_H - cam.y) * ZOOM;
+    return labelH > 0 ? headTop - 11 - labelH : headTop - 4;
+  };
+
+  const drawMinimap = (): void => {
+    const k = Math.min(MINIMAP_MAX_W / mapW, MINIMAP_MAX_H / mapH);
+    const mw = mapW * k;
+    const mh = mapH * k;
+    const mx = cssW - MINIMAP_INSET - mw;
+    // Coarse pointers: the mobile HUD column (chat bar, emotes, hints) owns
+    // the bottom of the screen, so the map anchors top-right instead.
+    const my = coarsePointer ? MINIMAP_TOP_COARSE : cssH - MINIMAP_BOTTOM - mh;
+    // paper backing
+    ctx.fillStyle = "rgba(242,239,231,0.92)";
+    ctx.fillRect(mx - 4, my - 4, mw + 8, mh + 8);
+    ctx.strokeStyle = "#E4DFD3";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(mx - 3.5, my - 3.5, mw + 7, mh + 7);
+    // floor rectangle
+    ctx.fillStyle = floor.theme.floorA;
+    ctx.fillRect(mx, my, mw, mh);
+    ctx.strokeRect(mx + 0.5, my + 0.5, mw - 1, mh - 1);
+    // booth zones (4x3 blocks)
+    for (const b of built.booths) {
+      const bx = mx + b.spot.x * TILE * k;
+      const by = my + b.spot.y * TILE * k;
+      const bw = 4 * TILE * k;
+      const bh = 3 * TILE * k;
+      ctx.fillStyle = b.startup ? b.startup.booth.banner : "#B9B2A2";
+      ctx.fillRect(bx, by, bw, bh);
+      if (b.isYours) {
+        ctx.strokeStyle = "#B08D2E";
+        ctx.strokeRect(bx - 0.5, by - 0.5, bw + 1, bh + 1);
+        ctx.strokeStyle = "#E4DFD3";
+      }
+    }
+    // people
+    ctx.fillStyle = "#23201A";
+    for (const r of remotes.values()) ctx.fillRect(mx + r.x * k - 1, my + r.y * k - 1, 2, 2);
+    for (const n of npcs) ctx.fillRect(mx + n.x * k - 1, my + n.y * k - 1, 2, 2);
+    ctx.fillStyle = "#D9480F";
+    ctx.fillRect(mx + player.x * k - 1.5, my + player.y * k - 1.5, 3, 3);
+    // camera viewport
+    const vx0 = Math.max(0, cam.x);
+    const vy0 = Math.max(0, cam.y);
+    const vx1 = Math.min(mapW, cam.x + cam.w);
+    const vy1 = Math.min(mapH, cam.y + cam.h);
+    if (vx1 > vx0 && vy1 > vy0) {
+      ctx.strokeStyle = "rgba(35,32,26,0.35)";
+      ctx.strokeRect(mx + vx0 * k + 0.5, my + vy0 * k + 0.5, (vx1 - vx0) * k - 1, (vy1 - vy0) * k - 1);
+    }
   };
 
   const render = (nowMs: number): void => {
@@ -475,10 +824,37 @@ export function createGame(opts: GameOptions): GameHandle {
       if (pick && pick.sortY >= lo && pick.sortY <= hi) pick.draw(ctx);
     }
 
-    // screen-space pass: labels + interaction nudge
+    // screen-space pass: labels, bubbles, interaction nudge, minimap
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    for (const r of remotes.values()) drawLabel(r.name, r.x, r.y);
-    for (const n of npcs) drawLabel(n.name, n.x, n.y);
+    for (const r of remotes.values()) drawLabel(r.name, r.status, r.x, r.y);
+    for (const n of npcs) drawLabel(n.name, undefined, n.x, n.y);
+    if (me.status) drawLabel(me.name, me.status, player.x, player.y);
+
+    // chat / emote bubbles sit above the name pills
+    bubbles.prune(nowMs);
+    bubbles.draw(
+      ctx,
+      "me",
+      (player.x - cam.x) * ZOOM,
+      bubbleTailY(player.y, me.status ? LABEL_H_STATUS : 0),
+      nowMs,
+      cssW,
+      cssH
+    );
+    for (const [id, r] of remotes) {
+      bubbles.draw(
+        ctx,
+        id,
+        (r.x - cam.x) * ZOOM,
+        bubbleTailY(r.y, r.status ? LABEL_H_STATUS : LABEL_H),
+        nowMs,
+        cssW,
+        cssH
+      );
+    }
+    for (const n of npcs) {
+      bubbles.draw(ctx, n.bubbleId, (n.x - cam.x) * ZOOM, bubbleTailY(n.y, LABEL_H), nowMs, cssW, cssH);
+    }
 
     if (nearBooth) {
       const wx = (nearBooth.spot.x + 2) * TILE;
@@ -498,6 +874,8 @@ export function createGame(opts: GameOptions): GameHandle {
       ctx.textBaseline = "middle";
       ctx.fillText("!", bx, by + 0.5);
     }
+
+    if (minimapOn) drawMinimap();
   };
 
   // ---------- loop / lifecycle ----------
@@ -515,10 +893,15 @@ export function createGame(opts: GameOptions): GameHandle {
   };
   raf = requestAnimationFrame(tick);
 
+  const prevTouchAction = canvas.style.touchAction;
+  canvas.style.touchAction = "manipulation";
+
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
   window.addEventListener("blur", onBlur);
-  canvas.addEventListener("click", onClick);
+  canvas.addEventListener("pointerdown", onPointerDown);
+  canvas.addEventListener("pointermove", onPointerMove);
+  canvas.addEventListener("pointerleave", onPointerLeave);
 
   return {
     setInputEnabled(v: boolean): void {
@@ -529,6 +912,28 @@ export function createGame(opts: GameOptions): GameHandle {
       myClaim = claim;
       rebuild();
     },
+    emote(kind: EmoteKind): void {
+      bubbles.showEmote("me", EMOTE_CHARS[kind], performance.now());
+      net.sendEmote(kind); // the echo is ignored above, so no double-render
+      director.onPlayerEmote(kind, player.x, player.y, npcs);
+      if (!firstEmoteDone) {
+        firstEmoteDone = true;
+        cb.onFirstAction?.("emote");
+      }
+    },
+    showBubble(entityId: string, text: string): void {
+      bubbles.showChat(entityId, text, performance.now());
+    },
+    setMinimap(v: boolean): void {
+      minimapOn = v;
+    },
+    walkToBooth(spotIndex: number): void {
+      const b = built.booths.find((x) => x.spotIndex === spotIndex);
+      if (!b) return;
+      // Aim at the booth's center; findPath resolves solid targets to the
+      // nearest reachable tile, so this walks up to the entrance.
+      startPathTo(b.spot.x + 2, b.spot.y + 1);
+    },
     destroy(): void {
       if (destroyed) return;
       destroyed = true;
@@ -536,9 +941,14 @@ export function createGame(opts: GameOptions): GameHandle {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
-      canvas.removeEventListener("click", onClick);
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerleave", onPointerLeave);
+      canvas.style.cursor = "";
+      canvas.style.touchAction = prevTouchAction;
       ro.disconnect();
       unsubNet();
+      bubbles.clear();
     },
   };
 }

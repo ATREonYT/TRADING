@@ -1,12 +1,13 @@
 # FounderFloor
 
 A walkable 2D expo floor for startups. Each floor is a small tile-map hall with
-booths; founder NPCs stand at their booths and answer keyword-matched questions
-in DMs, other visitors show up as live avatars over WebSocket, and "Connect"
-files a contact into your profile. Ranks hang on verified monthly revenue, not
-vibes. Next.js 14 (app router) on the front, a plain `ws` room server on the
-back, canvas 2D for the world — no game engine, no sprite assets, everything is
-drawn procedurally at init.
+booths; founder NPCs stand at their booths, mutter in-voice idle lines, and
+answer keyword-matched questions in DMs. Other visitors show up as live avatars
+over WebSocket — you can watch them talk in speech bubbles, click one to DM
+them, and sign the guestbook at their stand. Ranks hang on verified monthly
+revenue, not vibes. Next.js 14 (app router) on the front, a plain `ws` room
+server on the back, canvas 2D for the world — no game engine, no sprite assets,
+everything is drawn procedurally at init.
 
 ![Main Hall floor](docs/floor.png)
 
@@ -17,23 +18,59 @@ npm install
 npm run dev
 ```
 
-Two ports: the web app on **http://localhost:3000** and the WebSocket floor
-server on **:3001** (`PORT_WS` overrides it). `npm run dev` starts both via
-concurrently; `npm run dev:web` / `npm run dev:ws` start them separately.
-`npm run typecheck` and `npm run build` do what they say.
+Two ports: the web app on **http://localhost:3000** and the floor server
+(WebSocket + HTTP) on **:3001** (`PORT_WS` overrides it). `npm run dev` starts
+both via concurrently; `npm run dev:web` / `npm run dev:ws` start them
+separately. `npm run typecheck` and `npm run build` do what they say.
 
 If the floor server is down the game still runs — you get a "solo preview"
 badge and NPC founders only.
 
 ## Controls
 
-- **WASD / arrow keys** — walk
+- **WASD / arrow keys** — walk; **click/tap anywhere** — pathfind there
+  (clicking a booth from across the hall walks you up to it; on touch this is
+  the only way to get around, and it's fine)
 - **E or Enter** — talk to the booth you're near (a `!` bubble and an "E — talk
   to" hint appear); clicking a nearby booth works too
-- Chat panel (bottom left): **Floor** tab broadcasts to everyone on the floor,
-  the DM tab talks to the founder whose booth you opened
+- **1–5** — reactions (wave, laugh, clap, heart, question); they pop as a
+  bubble over your head for everyone on the floor. The bar at the bottom does
+  the same thing with a mouse or a thumb
+- **M** — toggle the minimap (bottom right; on by default when the hall is
+  bigger than your screen)
+- **Hover** a booth, founder, or player for a card with the one-liner, rank,
+  and status; **click a player** to open a DM with them
+- Chat panel (bottom left): **Floor** tab broadcasts to everyone on the floor
+  (and renders as a bubble over your avatar); other tabs are DM threads — NPC
+  founders or live players. Unread dots mean what unread dots always mean
 - **Walking away from a booth closes its card and conversation** — like a real
   expo, the chat doesn't follow you across the hall
+- Typing in any input suspends movement keys
+
+## Liveness
+
+- **Speech bubbles** — floor chat renders above the speaker's avatar; emotes
+  pop in a small circle. NPC founders have ambient chatter of their own, so a
+  floor with nobody on it still sounds like a floor.
+- **Player-to-player DMs** — click a live avatar (or get clicked) and a DM
+  thread opens in the chat panel, relayed through the floor server. You can
+  "Connect" from the thread header, same as with a founder.
+- **Guestbooks** — every booth card has one. Sign it and the entry lands on
+  the server, broadcasts to the floor, and is still there tomorrow.
+- **Activity ticker** — one muted line under the top bar cycling recent floor
+  events: who walked in, who set up a stand, who signed a guestbook.
+- **Status line** — set "raising seed" (or whatever) in Profile; it shows
+  under your name label on the floor and in your hover card.
+- **Onboarding checklist** — four first-session steps (walk, talk, react,
+  connect). Finishing them earns the First Steps badge.
+- **Badges** — shown on /profile. First Steps for the checklist, Demo Night
+  for being in the hall while the event is live. Earned, not requested.
+- **Demo Night** — every Thursday 19:00–20:00 UTC on the Main Hall. The pill
+  in the lobby and the floor HUD counts down to it.
+- **/directory** — all seed startups across all floors on one page: text
+  search, category / seeking-co-founder / minimum-rank filters, live "N here"
+  presence dots, and a "Walk there" link per row. The lobby shows the same
+  presence counts per floor.
 
 ## Claiming a stand
 
@@ -46,7 +83,20 @@ server arbitrates ties). One stand per floor; claiming another spot moves your
 stand; "Pack up" from your own stand card takes it down. Claims persist locally
 per floor, and your stand re-raises itself whenever you're on that floor —
 while you're away, it packs up (a stand with nobody at it is just furniture).
-- Typing in any input suspends movement keys
+
+## Floor server HTTP
+
+The `ws` server also answers plain HTTP on the same port (CORS `*`):
+
+| Route | Returns |
+| --- | --- |
+| `GET /presence` | `{ floors: { [floorId]: liveCount } }` — who's where, right now |
+| `GET /guestbook?floor=ID&key=KEY` | `{ entries: GuestbookEntry[] }` — newest first, capped at 50. `key` is the startup id for seed booths, `spot:<index>` for claimed stands |
+
+Guestbooks and the activity ticker persist to `server/floor-data.json`
+(debounced 2s, atomic tmp+rename write; flushed on SIGINT/SIGTERM; a corrupt
+file gets you one warning and an empty start). Rooms, positions, and chat are
+in-memory only and vanish on restart.
 
 ## Architecture
 
@@ -54,25 +104,29 @@ while you're away, it packs up (a stand with nobody at it is just furniture).
 | --- | --- |
 | `lib/types.ts` | Every shared contract. All modules compile against this file; it imports nothing. |
 | `lib/data/floors.ts` | The four floor definitions: tile size, theme, 4x3 booth spots (+1-tile apron), tier gates, the reserved spot for your booth. |
-| `lib/data/startups.ts` | 25 seed startups with booth themes and keyword-matched dialogue; `replyFor()` picks NPC replies. |
+| `lib/data/startups.ts` | 25 seed startups with booth themes, keyword-matched dialogue (`replyFor()`), and per-founder ambient idle lines (`IDLE_LINES`). |
+| `lib/data/events.ts` | The weekly Demo Night window, computed in pure UTC math. |
 | `lib/ranks.ts` | Revenue → rank table (`Garage` … `Escape Velocity`). |
-| `lib/store.ts` | SSR-safe localStorage store (`useAppState`): profile, subscription tier, connections, your startup. |
-| `lib/net.ts` | Browser WebSocket client implementing `NetClient`; silently degrades to offline single-player, 2 reconnect attempts on drops. |
-| `server/index.mjs` | Standalone `ws` room server: rooms keyed by floor id, join/move/chat relay, rate limiting, heartbeat. In-memory only. |
-| `game/engine.ts` | Render loop, input, collision, camera, movement packets, remote-player interpolation, booth proximity. |
+| `lib/store.ts` | SSR-safe localStorage store (`useAppState`): profile (+status), tier, connections (+notes), your startup, claims, onboarding steps, badges. |
+| `lib/net.ts` | Browser WebSocket client implementing `NetClient`, plus `httpBase()` for the HTTP routes; silently degrades to offline single-player, 2 reconnect attempts on drops. |
+| `server/index.mjs` | Standalone `ws` + HTTP floor server: rooms keyed by floor id, join/move/chat/emote/booth/guestbook relay, rate limiting, heartbeat, JSON persistence. |
+| `game/engine.ts` | Render loop, input, collision, camera, movement packets, remote-player interpolation, booth proximity, hover hit-tests, tap-to-walk, minimap, bubble plumbing. |
+| `game/path.ts` | BFS tile pathfinding for click/tap-to-walk (solid targets resolve to the nearest reachable tile). |
+| `game/bubbles.ts` | Chat/emote bubble rendering: one live bubble per entity, word wrap, fades. |
 | `game/tilemap.ts` | FloorDef → collision grid + draw lists: walls, checker floor, booth stalls, seeded ambient props. |
 | `game/sprites.ts` | Procedural pixel avatars (skin/outfit/hair palettes), booth glyphs, color utilities. |
-| `game/npc.ts` | Founder NPCs: fidget near their counter, face you when you approach. |
-| `app/` | Routes: landing, `/lobby` (floor picker + first-visit onboarding), `/floor/[id]` (the game + HUD), `/profile` (identity, booth editor, verification, membership, connections). |
-| `components/` | HUD and form pieces: BoothCard, ChatPanel, AvatarPicker, RankBadge, TierTag, Toast, pixel glyph/logo. |
+| `game/npc.ts` | Founder NPCs (fidget near their counter, face you when you approach) and the AmbientDirector that schedules idle chatter, neighbor reactions, and wave-backs. |
+| `app/` | Routes: landing, `/lobby` (floor picker + presence + first-visit onboarding), `/floor/[id]` (the game + HUD), `/directory` (search + filters), `/profile` (identity, status, booth editor, verification, membership, badges, connections). |
+| `components/` | HUD and form pieces: BoothCard, ChatPanel, Guestbook, HoverCard, EmoteBar, ActivityTicker, OnboardingCard, EventPill, AvatarPicker, RankBadge, TierTag, Toast, `usePresence`. |
 
 ## Demo simplifications (and the production path)
 
 - **In-memory rooms** — the ws server keeps rooms in a `Map` and forgets
-  everything on restart; production would move room state to Redis pub/sub so
+  positions and chat on restart (guestbooks and the ticker survive via
+  `floor-data.json`); production would move room state to Redis pub/sub so
   multiple server nodes share floors and survive deploys.
-- **localStorage persistence** — profile, connections, tier and your booth
-  live under one localStorage key on the device; production would keep
+- **localStorage persistence** — profile, connections, tier, badges and your
+  booth live under one localStorage key on the device; production would keep
   profiles in Postgres behind real accounts.
 - **Simulated revenue verification** — the profile page lets you type a
   number and calls it verified; production is read-only revenue verification
@@ -83,11 +137,8 @@ while you're away, it packs up (a stand with nobody at it is just furniture).
 
 ## What to build next
 
-- Player-to-player DMs (the plumbing exists; only NPC DMs have UI).
-- Your booth on other people's screens — booths are local-only today, which is
-  the biggest lie the demo tells.
 - Persist floor chat history per room (currently vanishes on leave).
 - Spatial audio-style chat fading by distance, since positions already relay.
-- Booth analytics for owners: visits, chats, connects.
+- Booth analytics for owners: visits, chats, connects, guestbook rate.
 - Moderation basics before any of this meets the public internet: name
-  filtering, mute, report.
+  filtering, mute, report — the guestbooks especially.

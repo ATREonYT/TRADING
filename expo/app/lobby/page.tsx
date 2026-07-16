@@ -7,6 +7,8 @@ import { FLOORS } from "@/lib/data/floors";
 import { TIER_ORDER, type AvatarLook } from "@/lib/types";
 import AvatarPicker from "@/components/AvatarPicker";
 import TierTag, { TIER_LABEL } from "@/components/TierTag";
+import EventPill from "@/components/EventPill";
+import { usePresence } from "@/components/usePresence";
 
 function FirstVisitPanel({
   onDone,
@@ -66,6 +68,7 @@ function FirstVisitPanel({
 export default function LobbyPage() {
   const [state, actions] = useAppState();
   const [ready, setReady] = useState(false);
+  const presence = usePresence();
 
   useEffect(() => {
     setReady(true);
@@ -94,12 +97,19 @@ export default function LobbyPage() {
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-12">
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <h1 className="font-display text-3xl">Pick a floor</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="font-display text-3xl">Pick a floor</h1>
+          <EventPill />
+        </div>
         <p className="text-sm text-muted">
           Walking as <span className="text-ink">{state.profile.name}</span> ·{" "}
           <Link href="/profile" className="text-accent hover:underline">
             change
+          </Link>{" "}
+          ·{" "}
+          <Link href="/directory" className="text-accent hover:underline">
+            Directory
           </Link>
         </p>
       </div>
@@ -125,8 +135,17 @@ export default function LobbyPage() {
               <p className="mt-2 flex-1 text-sm leading-relaxed text-muted">
                 {floor.tagline}
               </p>
-              <p className="micro mt-4 text-muted">
-                {floor.boothSpots.length} booths
+              <p className="micro mt-4 flex items-center gap-3 text-muted">
+                <span>{floor.boothSpots.length} booths</span>
+                {(presence[floor.id] ?? 0) > 0 && (
+                  <span className="flex items-center gap-1.5 text-verify">
+                    <span
+                      aria-hidden="true"
+                      className="inline-block h-2 w-2 rounded-full bg-verify"
+                    />
+                    {presence[floor.id]} here now
+                  </span>
+                )}
               </p>
               {locked ? (
                 <div className="mt-4 flex items-center gap-2 border-t border-line pt-4">

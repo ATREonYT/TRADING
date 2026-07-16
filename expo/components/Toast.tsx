@@ -6,14 +6,16 @@ export interface ToastData {
 }
 
 /**
- * Quiet toast, bottom-center. The parent owns the state and the dismiss timer;
- * this stays mounted so the aria-live region exists before the first message.
+ * Quiet toast, top-center under the ticker — the bottom of the screen belongs
+ * to the emote bar and interact hint, which fire at exactly the moments toasts
+ * do. The parent owns the state and the dismiss timer; this stays mounted so
+ * the aria-live region exists before the first message.
  */
 export default function Toast({ toast }: { toast: ToastData | null }) {
   return (
     <div
       aria-live="polite"
-      className="pointer-events-none fixed bottom-6 left-1/2 z-[70] -translate-x-1/2"
+      className="pointer-events-none fixed left-1/2 top-36 z-[70] -translate-x-1/2 sm:top-28"
     >
       {toast && (
         <div

@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import type { Startup } from "@/lib/types";
+import type { NetClient, Startup } from "@/lib/types";
 import RankBadge from "@/components/RankBadge";
 import PixelGlyph from "@/components/PixelGlyph";
+import Guestbook from "@/components/Guestbook";
 
 interface BoothCardProps {
   startup: Startup;
@@ -16,6 +17,13 @@ interface BoothCardProps {
   /** Present only for your own stand: pack it up. */
   onUnclaim?: () => void;
   onClose: () => void;
+  /** When set, a guestbook renders below the founder row. */
+  guestbook?: {
+    net: NetClient | null;
+    floorId: string;
+    boothKey: string;
+    onFocusChange?: (focused: boolean) => void;
+  };
 }
 
 export default function BoothCard({
@@ -27,6 +35,7 @@ export default function BoothCard({
   onChat,
   onUnclaim,
   onClose,
+  guestbook,
 }: BoothCardProps) {
   const firstName = s.founder.split(" ")[0] || s.founder;
   const pct = Math.round(Math.max(0, Math.min(1, s.goalProgress)) * 100);
@@ -98,6 +107,16 @@ export default function BoothCard({
           <span className="micro text-muted">Founder</span>
           <p className="text-sm">{s.founder}</p>
         </div>
+
+        {guestbook && (
+          <Guestbook
+            net={guestbook.net}
+            floorId={guestbook.floorId}
+            boothKey={guestbook.boothKey}
+            boothName={s.name}
+            onFocusChange={guestbook.onFocusChange}
+          />
+        )}
 
         {isYours ? (
           <>

@@ -45,6 +45,19 @@ const TIER_BLURB: Record<SubTier, string> = {
   founder: "Every floor, velvet rope included.",
 };
 
+const BADGE_META: Record<string, { name: string; blurb: string; glyph: GlyphId }> = {
+  "first-steps": {
+    name: "First Steps",
+    blurb: "Walked, talked, reacted, connected.",
+    glyph: "star",
+  },
+  "demo-night": {
+    name: "Demo Night",
+    blurb: "In the hall while it was live.",
+    glyph: "bolt",
+  },
+};
+
 interface BoothForm {
   name: string;
   oneLiner: string;
@@ -261,6 +274,21 @@ export default function ProfilePage() {
               onChange={(e) => actions.setName(e.target.value.slice(0, 24))}
               placeholder="Ada Byron"
               autoComplete="name"
+              className="w-full max-w-sm rounded-md border border-line px-3 py-2 text-sm placeholder:text-muted/70"
+            />
+          </div>
+          <div>
+            <label htmlFor="profile-status" className="micro mb-1.5 block text-muted">
+              Status — shows over your head on the floor
+            </label>
+            <input
+              id="profile-status"
+              type="text"
+              defaultValue={state.profile.status ?? ""}
+              maxLength={40}
+              onBlur={(e) => actions.setStatus(e.target.value.slice(0, 40))}
+              placeholder="raising seed"
+              autoComplete="off"
               className="w-full max-w-sm rounded-md border border-line px-3 py-2 text-sm placeholder:text-muted/70"
             />
           </div>
@@ -629,6 +657,38 @@ export default function ProfilePage() {
         </div>
       </SectionCard>
 
+      {/* ---- Badges ---- */}
+      <SectionCard title="Badges">
+        {state.badges.length === 0 ? (
+          <p className="text-sm text-muted">
+            No badges yet. They&rsquo;re earned on the floor, not requested.
+          </p>
+        ) : (
+          <ul className="flex flex-wrap gap-3">
+            {state.badges.map((id) => {
+              const meta = BADGE_META[id];
+              return (
+                <li
+                  key={id}
+                  className="flex w-36 flex-col items-center gap-2 rounded-md border border-line p-3 text-center"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="flex h-10 w-10 items-center justify-center rounded-sm border-2 border-gold/60 bg-paper"
+                  >
+                    <PixelGlyph glyph={meta?.glyph ?? "star"} color="#B08D2E" size={18} />
+                  </span>
+                  <span className="micro text-ink">{meta?.name ?? id}</span>
+                  <span className="text-xs leading-snug text-muted">
+                    {meta?.blurb ?? "Earned somewhere on the floor."}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </SectionCard>
+
       {/* ---- Connections ---- */}
       <SectionCard title="Connections">
         {state.connections.length === 0 ? (
@@ -640,25 +700,44 @@ export default function ProfilePage() {
             {[...state.connections]
               .sort((a, b) => b.ts - a.ts)
               .map((c) => (
-                <li key={c.ts} className="flex items-center gap-3 py-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm">
-                      {c.name}
-                      {c.founder && (
-                        <span className="text-muted"> · {c.founder}</span>
-                      )}
-                    </p>
-                    <p className="micro mt-0.5 text-muted">
-                      {c.floorId} · {relativeTime(c.ts)}
-                    </p>
+                <li key={c.ts} className="flex flex-col gap-2 py-3">
+                  <div className="flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm">
+                        {c.name}
+                        {c.founder && (
+                          <span className="text-muted"> · {c.founder}</span>
+                        )}
+                      </p>
+                      <p className="micro mt-0.5 text-muted">
+                        {c.floorId} · {relativeTime(c.ts)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => actions.removeConnection(c.ts)}
+                      className="shrink-0 rounded-md border border-line px-2.5 py-1 text-xs text-muted hover:border-accent hover:text-accent"
+                    >
+                      Remove
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => actions.removeConnection(c.ts)}
-                    className="shrink-0 rounded-md border border-line px-2.5 py-1 text-xs text-muted hover:border-accent hover:text-accent"
-                  >
-                    Remove
-                  </button>
+                  <div>
+                    <label htmlFor={`connection-note-${c.ts}`} className="sr-only">
+                      Note about {c.name}
+                    </label>
+                    <input
+                      id={`connection-note-${c.ts}`}
+                      type="text"
+                      defaultValue={c.note ?? ""}
+                      maxLength={120}
+                      placeholder="add a note…"
+                      autoComplete="off"
+                      onBlur={(e) =>
+                        actions.setConnectionNote(c.ts, e.target.value.trim().slice(0, 120))
+                      }
+                      className="w-full rounded-md border border-line px-2.5 py-1.5 text-xs placeholder:text-muted/70"
+                    />
+                  </div>
                 </li>
               ))}
           </ul>
