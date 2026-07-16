@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-paper font-body text-ink antialiased;
+    min-height: 100%;
+  }
+
+  ::selection {
+    @apply bg-accent-soft text-ink;
+  }
+
+  :focus-visible {
+    outline: 2px solid theme("colors.accent");
+    outline-offset: 2px;
+  }
+
+  input,
+  textarea,
+  select {
+    @apply bg-panel;
+  }
+}
+
+@layer components {
+  /* Uppercase letterspaced micro-label for metadata (tier tags, rank names). */
+  .micro {
+    @apply text-[11px] font-medium uppercase tracking-widest;
+  }
+
+  /* Standard quiet panel: white card, hairline border. */
+  .panel {
+    @apply rounded-md border border-line bg-panel;
+  }
+}
+
+@layer utilities {
+  /* Keep pixel art crisp when scaled — canvases, sprites, glyphs. */
+  .pixelated {
+    image-rendering: crisp-edges;
+    image-rendering: pixelated;
+  }
+}

@@ -1,0 +1,245 @@
+/**
+ * FounderFloor — WebSocket net client (browser-only transport).
+ *
+ * Implements the NetClient contract in lib/types.ts against the floor server
+ * in server/index.mjs. Every method is a safe no-op during SSR.
+ *
+ * Offline behavior:
+ * - If the socket never opens at all, one {t:"status", online:false, count:1}
+ *   event fires and the client goes dormant (sends become no-ops) — the game
+ *   then runs single-player.
+ * - If a previously-open socket drops, the same offline status fires once and
+ *   the client attempts exactly 2 reconnects, 3s apart, re-sending join with
+ *   the last known MoveState. If both fail, it goes dormant.
+ */
+
+import type { MoveState, NetClient, NetEvent, PlayerProfile } from "@/lib/types";
+
+const RECONNECT_ATTEMPTS = 2;
+const RECONNECT_DELAY_MS = 3000;
+
+type Phase =
+  | "idle" // created, connect() not called yet
+  | "connecting" // socket created, waiting for open
+  | "open" // connected and joined
+  | "waiting" // dropped after open; reconnect timer pending
+  | "dormant" // gave up; sends are no-ops, no further events
+  | "closed"; // disconnect() called
+
+export function createNetClient(wsUrl?: string): NetClient {
+  const subs = new Set<(ev: NetEvent) => void>();
+
+  let phase: Phase = "idle";
+  let ws: WebSocket | null = null;
+  let selfId = "";
+  let floorId = "";
+  let me: PlayerProfile | null = null;
+  let lastMove: MoveState | null = null;
+  let attemptsLeft = RECONNECT_ATTEMPTS;
+  let reconnectAttempt = false; // is the current socket a reconnect attempt?
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let warned = false; // at most one console.warn per client lifetime
+
+  const isBrowser = (): boolean => typeof window !== "undefined";
+
+  function emit(ev: NetEvent): void {
+    // Snapshot so subscribers can unsubscribe (or subscribe) mid-dispatch.
+    for (const cb of [...subs]) {
+      try {
+        cb(ev);
+      } catch {
+        // A throwing subscriber must never break the transport.
+      }
+    }
+  }
+
+  function resolveUrl(): string {
+    // Priority: explicit argument > NEXT_PUBLIC_WS_URL > same-host default.
+    // The default follows wherever the page is served from — never a
+    // hardcoded localhost — so LAN/tunnel access works out of the box.
+    const base =
+      wsUrl ||
+      process.env.NEXT_PUBLIC_WS_URL ||
+      `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.hostname}:3001/ws`;
+    const u = new URL(base);
+    u.searchParams.set("floor", floorId);
+    return u.toString();
+  }
+
+  function clearTimer(): void {
+    if (reconnectTimer !== null) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+  }
+
+  function detach(sock: WebSocket): void {
+    sock.onopen = null;
+    sock.onmessage = null;
+    sock.onerror = null;
+    sock.onclose = null;
+  }
+
+  function dropSocket(): void {
+    if (!ws) return;
+    const old = ws;
+    ws = null;
+    detach(old);
+    try {
+      old.close(1000);
+    } catch {
+      // Closing a CONNECTING socket can throw in some engines; ignore.
+    }
+  }
+
+  function goDormant(): void {
+    phase = "dormant";
+    clearTimer();
+    if (!warned) {
+      warned = true;
+      // Single concise line — the game keeps running offline, so no spam.
+      console.warn("[net] floor server unreachable — continuing offline");
+    }
+  }
+
+  function emitOffline(): void {
+    emit({ t: "status", online: false, count: 1 });
+  }
+
+  function scheduleReconnect(): void {
+    attemptsLeft -= 1;
+    phase = "waiting";
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      if (phase !== "waiting") return;
+      phase = "connecting";
+      reconnectAttempt = true;
+      openSocket();
+    }, RECONNECT_DELAY_MS);
+  }
+
+  function handleFailure(hadOpened: boolean): void {
+    if (phase === "closed" || phase === "dormant") return;
+    if (hadOpened) {
+      // A live connection dropped: announce offline once for this outage,
+      // then start a fresh reconnect budget.
+      emitOffline();
+      attemptsLeft = RECONNECT_ATTEMPTS;
+      scheduleReconnect();
+    } else if (reconnectAttempt) {
+      // A reconnect attempt failed; offline was already announced.
+      if (attemptsLeft > 0) scheduleReconnect();
+      else goDormant();
+    } else {
+      // The very first connection never opened: one offline signal, then
+      // dormant — the game runs single-player with NPC founders only.
+      emitOffline();
+      goDormant();
+    }
+  }
+
+  function openSocket(): void {
+    let sock: WebSocket;
+    try {
+      sock = new WebSocket(resolveUrl());
+    } catch {
+      handleFailure(false);
+      return;
+    }
+    ws = sock;
+    let opened = false;
+
+    sock.onopen = () => {
+      if (ws !== sock) return;
+      opened = true;
+      phase = "open";
+      reconnectAttempt = false;
+      attemptsLeft = RECONNECT_ATTEMPTS; // a future outage gets a fresh budget
+      if (me && lastMove) {
+        sock.send(JSON.stringify({ t: "join", player: me, s: lastMove }));
+      }
+    };
+
+    sock.onmessage = (e: MessageEvent) => {
+      if (ws !== sock) return;
+      let raw: unknown;
+      try {
+        raw = JSON.parse(String(e.data));
+      } catch {
+        return; // malformed frame — ignore
+      }
+      if (typeof raw !== "object" || raw === null || typeof (raw as { t?: unknown }).t !== "string") {
+        return;
+      }
+      const ev = raw as NetEvent;
+      if (ev.t === "welcome") selfId = ev.selfId;
+      emit(ev); // dispatch parsed server events verbatim
+    };
+
+    sock.onerror = () => {
+      // Browsers always follow error with close; the close handler decides.
+    };
+
+    sock.onclose = () => {
+      if (ws !== sock) return;
+      ws = null;
+      handleFailure(opened);
+    };
+  }
+
+  return {
+    get online(): boolean {
+      return phase === "open";
+    },
+
+    get selfId(): string {
+      return selfId;
+    },
+
+    connect(fid: string, m: PlayerProfile, spawn: MoveState): void {
+      if (!isBrowser()) return; // SSR no-op
+      // Calling connect while active (e.g. switching floors) silently
+      // replaces the previous connection without emitting stale events.
+      clearTimer();
+      dropSocket();
+      floorId = fid;
+      me = m;
+      lastMove = spawn;
+      selfId = m.id; // provisional; the server may suffix it (welcome.selfId)
+      reconnectAttempt = false;
+      attemptsLeft = RECONNECT_ATTEMPTS;
+      phase = "connecting";
+      openSocket();
+    },
+
+    disconnect(): void {
+      if (!isBrowser()) return; // SSR no-op
+      phase = "closed";
+      clearTimer();
+      dropSocket(); // detaches all socket listeners — no events after this
+    },
+
+    sendMove(s: MoveState): void {
+      lastMove = s; // always remembered, so a reconnect joins in place
+      if (phase !== "open" || !ws || ws.readyState !== ws.OPEN) return;
+      ws.send(JSON.stringify({ t: "move", s }));
+    },
+
+    sendChat(text: string, scope: "floor" | "dm", peerId?: string): void {
+      // The server echoes floor chat (and dms) back to the sender for
+      // consistent ordering, so this client never fakes a local echo.
+      // When offline this is a pure no-op — the UI is responsible for
+      // locally echoing the player's own floor-chat messages.
+      if (phase !== "open" || !ws || ws.readyState !== ws.OPEN) return;
+      // JSON.stringify drops the peerId key when it is undefined.
+      ws.send(JSON.stringify({ t: "chat", text, scope, peerId }));
+    },
+
+    on(cb: (ev: NetEvent) => void): () => void {
+      subs.add(cb);
+      return () => {
+        subs.delete(cb);
+      };
+    },
+  };
+}
