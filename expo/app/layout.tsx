@@ -6,7 +6,7 @@ import PixelLogo from "@/components/PixelLogo";
 export const metadata: Metadata = {
   title: "FounderFloor — a walkable expo for startups",
   description:
-    "A 2D trade-show floor that never tears down. Walk in, talk to founders, connect. Revenue ranks are verified; egos are not.",
+    "A 2D trade-show floor that never tears down. Walk in, talk to founders, connect. Ranks come from verified revenue (simulated in this demo).",
 };
 
 export default function RootLayout({
@@ -51,7 +51,7 @@ export default function RootLayout({
         <footer className="border-t border-line bg-panel">
           <div className="mx-auto flex w-full max-w-5xl flex-col gap-1 px-4 py-6 text-sm text-muted sm:flex-row sm:items-baseline sm:justify-between">
             <p>Built by one person and a robot.</p>
-            <p>Revenue ranks are verified. Egos are not.</p>
+            <p>Revenue ranks are verified &mdash; simulated in this build. Egos are not.</p>
           </div>
         </footer>
       </body>

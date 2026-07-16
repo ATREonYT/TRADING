@@ -110,8 +110,14 @@ wss.on("error", (err) => {
 });
 
 wss.on("connection", (ws, req) => {
-  const url = new URL(req.url ?? "/", "ws://internal");
-  const floorId = (url.searchParams.get("floor") || "lobby").slice(0, MAX_ID_LEN);
+  let floorId = "lobby";
+  try {
+    const url = new URL(req.url ?? "/", "ws://internal");
+    floorId = (url.searchParams.get("floor") || "lobby").slice(0, MAX_ID_LEN);
+  } catch {
+    ws.close(1008, "bad request url");
+    return;
+  }
 
   ws.isAlive = true;
   ws.on("pong", () => {

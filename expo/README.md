@@ -8,6 +8,8 @@ vibes. Next.js 14 (app router) on the front, a plain `ws` room server on the
 back, canvas 2D for the world — no game engine, no sprite assets, everything is
 drawn procedurally at init.
 
+![Main Hall floor](docs/floor.png)
+
 ## Quickstart
 
 ```bash

@@ -109,9 +109,10 @@ export class Npc {
   }
 }
 
-/** One NPC per occupied booth (vacant stalls get nobody, which is the point). */
+/** One NPC per occupied booth (vacant stalls get nobody, which is the point).
+ * The player's own booth gets no NPC either — the owner is present in person. */
 export function makeNpcs(booths: BoothInstance[], bank: SpriteBank): Npc[] {
-  return booths.map((b) => new Npc(b, bank));
+  return booths.filter((b) => !b.isYours).map((b) => new Npc(b, bank));
 }
 
 /** Advance every NPC one frame; the engine calls this before drawing. */

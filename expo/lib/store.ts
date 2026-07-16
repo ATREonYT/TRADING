@@ -109,15 +109,43 @@ function looksLikeConnection(v: unknown): v is Connection {
   );
 }
 
+const GLYPHS = ["bolt", "leaf", "coin", "chip", "flask", "rocket", "heart", "cube", "wave", "star"] as const;
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+
+/** Clamp an untrusted value to an integer palette index in [0, max]. */
+function lookIndex(v: unknown, max: number): number {
+  const n = Math.trunc(numOr(v, 0));
+  return Math.min(Math.max(n, 0), max);
+}
+
+function sanitizeLook(v: unknown): { skin: number; outfit: number; hair: number } {
+  const l = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+  return { skin: lookIndex(l.skin, 5), outfit: lookIndex(l.outfit, 7), hair: lookIndex(l.hair, 7) };
+}
+
 function looksLikeStartup(v: unknown): v is Startup {
   if (!v || typeof v !== "object") return false;
   const s = v as Record<string, unknown>;
+  if (
+    typeof s.id !== "string" ||
+    typeof s.name !== "string" ||
+    typeof s.goal !== "string" ||
+    typeof s.oneLiner !== "string" ||
+    typeof s.founder !== "string" ||
+    typeof s.booth !== "object" ||
+    s.booth === null
+  ) {
+    return false;
+  }
+  const b = s.booth as Record<string, unknown>;
   return (
-    typeof s.id === "string" &&
-    typeof s.name === "string" &&
-    typeof s.goal === "string" &&
-    typeof s.booth === "object" &&
-    s.booth !== null
+    typeof b.carpet === "string" &&
+    HEX_COLOR.test(b.carpet) &&
+    typeof b.banner === "string" &&
+    HEX_COLOR.test(b.banner) &&
+    typeof b.sign === "string" &&
+    typeof b.glyph === "string" &&
+    (GLYPHS as readonly string[]).includes(b.glyph)
   );
 }
 
@@ -132,14 +160,8 @@ function sanitize(raw: unknown): AppState {
     const pr = p as Record<string, unknown>;
     if (typeof pr.id === "string") base.profile.id = pr.id;
     if (typeof pr.name === "string") base.profile.name = pr.name;
-    const look = pr.look;
-    if (look && typeof look === "object") {
-      const l = look as Record<string, unknown>;
-      base.profile.look = {
-        skin: numOr(l.skin, 0),
-        outfit: numOr(l.outfit, 0),
-        hair: numOr(l.hair, 0),
-      };
+    if (pr.look && typeof pr.look === "object") {
+      base.profile.look = sanitizeLook(pr.look);
     }
   }
 
@@ -155,6 +177,8 @@ function sanitize(raw: unknown): AppState {
     const s = r.myStartup;
     base.myStartup = {
       ...s,
+      booth: { ...s.booth, sign: s.booth.sign.slice(0, 12) },
+      founderLook: sanitizeLook((s as unknown as Record<string, unknown>).founderLook),
       goalProgress: clamp01(numOr(s.goalProgress, 0)),
       verifiedRevenue: Math.max(0, numOr(s.verifiedRevenue, 0)),
     };

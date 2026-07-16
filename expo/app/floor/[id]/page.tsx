@@ -8,12 +8,11 @@ import { floorById } from "@/lib/data/floors";
 import { STARTUPS, replyFor } from "@/lib/data/startups";
 import { createNetClient } from "@/lib/net";
 import { createGame } from "@/game/engine";
-import { TIER_ORDER, TILE } from "@/lib/types";
+import { TIER_ORDER } from "@/lib/types";
 import type {
   BoothInstance,
   ChatMsg,
   GameHandle,
-  MoveState,
   NetClient,
   Startup,
 } from "@/lib/types";
@@ -52,7 +51,7 @@ export default function FloorPage({ params }: { params: { id: string } }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const handleRef = useRef<GameHandle | null>(null);
   const netRef = useRef<NetClient | null>(null);
-  const replyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const replyTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const myStartup = state.myStartup;
@@ -123,6 +122,19 @@ export default function FloorPage({ params }: { params: { id: string } }) {
         floorId: floor.id,
       });
       showToast(`Connected with ${s.founder} of ${s.name}.`);
+      // The founder acknowledges the connection in their own voice, in the DM thread.
+      if (!s.id.startsWith("mine")) {
+        const ack: ChatMsg = {
+          id: uid(),
+          fromId: `npc:${s.id}`,
+          from: s.founder,
+          text: s.dialogue?.connectReply ?? "Connected — good to meet you.",
+          ts: Date.now(),
+          scope: "dm",
+          peerId: `npc:${s.id}`,
+        };
+        setDms((prev) => ({ ...prev, [s.id]: [...(prev[s.id] ?? []), ack] }));
+      }
     },
     [floor, connectedIds, actions, showToast],
   );
@@ -166,8 +178,10 @@ export default function FloorPage({ params }: { params: { id: string } }) {
         [currentId]: [...(prev[currentId] ?? []), mine],
       }));
       setTypingFor(currentId);
-      if (replyTimer.current) clearTimeout(replyTimer.current);
-      replyTimer.current = setTimeout(() => {
+      // One timer per DM thread — replies to booth A must survive a quick hop to booth B.
+      if (replyTimers.current[currentId]) clearTimeout(replyTimers.current[currentId]);
+      replyTimers.current[currentId] = setTimeout(() => {
+        delete replyTimers.current[currentId];
         const reply: ChatMsg = {
           id: uid(),
           fromId: `npc:${currentId}`,
@@ -198,20 +212,14 @@ export default function FloorPage({ params }: { params: { id: string } }) {
     const canvas = canvasRef.current;
     if (!f || !canvas) return;
 
-    const size = () => {
-      canvas.width = canvas.clientWidth;
-      canvas.height = canvas.clientHeight;
-    };
-    size();
-    window.addEventListener("resize", size);
-
+    // Canvas buffer sizing is owned by the engine's dpr-aware ResizeObserver.
     const net = createNetClient();
     netRef.current = net;
     const offNet = net.on((ev) => {
       if (ev.t === "chat" && ev.msg.scope === "floor") {
-        const mineAlready =
-          ev.msg.fromId === profileRef.current.id || ev.msg.fromId === net.selfId;
-        if (!mineAlready) setFloorMsgs((m) => [...m.slice(-199), ev.msg]);
+        // Filter our own echo by the server-assigned wire identity only —
+        // a second tab shares the same profile id but gets its own selfId.
+        if (ev.msg.fromId !== net.selfId) setFloorMsgs((m) => [...m.slice(-199), ev.msg]);
       }
     });
 
@@ -253,24 +261,18 @@ export default function FloorPage({ params }: { params: { id: string } }) {
       },
     });
     handleRef.current = handle;
-
-    const spawn: MoveState = {
-      x: Math.floor((f.width * TILE) / 2),
-      y: Math.max(0, (f.height - 2) * TILE),
-      dir: "up",
-      moving: false,
-    };
-    net.connect(f.id, profileRef.current, spawn);
+    // The engine owns the connection: createGame() already called net.connect()
+    // with its collision-aware spawn point — connecting again here would double-join.
 
     // strict-mode double-mount is handled by this cleanup running between passes
     return () => {
-      window.removeEventListener("resize", size);
       offNet();
       handle.destroy();
       net.disconnect();
       handleRef.current = null;
       netRef.current = null;
-      if (replyTimer.current) clearTimeout(replyTimer.current);
+      for (const t of Object.values(replyTimers.current)) clearTimeout(t);
+      replyTimers.current = {};
     };
   }, [allowed, params.id]);
 
