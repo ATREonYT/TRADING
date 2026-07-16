@@ -32,6 +32,20 @@ badge and NPC founders only.
   to" hint appear); clicking a nearby booth works too
 - Chat panel (bottom left): **Floor** tab broadcasts to everyone on the floor,
   the DM tab talks to the founder whose booth you opened
+- **Walking away from a booth closes its card and conversation** — like a real
+  expo, the chat doesn't follow you across the hall
+
+## Claiming a stand
+
+Every floor has OPEN SPOT stands. Set up your startup in Profile (name, pitch,
+carpet/banner colors, sign, glyph, carpet pattern — with a pixel-accurate live
+preview), then walk up to any open stand and press **E** → **Claim this
+stand**. Your booth goes up on the spot, with a gold owner stripe, and every
+player on the floor sees it live over the WebSocket (first claim wins; the
+server arbitrates ties). One stand per floor; claiming another spot moves your
+stand; "Pack up" from your own stand card takes it down. Claims persist locally
+per floor, and your stand re-raises itself whenever you're on that floor —
+while you're away, it packs up (a stand with nobody at it is just furniture).
 - Typing in any input suspends movement keys
 
 ## Architecture

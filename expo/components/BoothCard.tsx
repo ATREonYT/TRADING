@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { Startup } from "@/lib/types";
 import RankBadge from "@/components/RankBadge";
 import PixelGlyph from "@/components/PixelGlyph";
@@ -7,18 +8,24 @@ import PixelGlyph from "@/components/PixelGlyph";
 interface BoothCardProps {
   startup: Startup;
   isYours: boolean;
+  /** Claimed by a live player on this floor (the founder is a real person here now). */
+  live?: boolean;
   connected: boolean;
   onConnect: () => void;
   onChat: () => void;
+  /** Present only for your own stand: pack it up. */
+  onUnclaim?: () => void;
   onClose: () => void;
 }
 
 export default function BoothCard({
   startup: s,
   isYours,
+  live = false,
   connected,
   onConnect,
   onChat,
+  onUnclaim,
   onClose,
 }: BoothCardProps) {
   const firstName = s.founder.split(" ")[0] || s.founder;
@@ -93,9 +100,47 @@ export default function BoothCard({
         </div>
 
         {isYours ? (
-          <p className="text-sm text-muted">
-            This is your booth. Try not to talk to yourself.
-          </p>
+          <>
+            <p className="text-sm text-muted">
+              This is your stand. Try not to talk to yourself.
+            </p>
+            <div className="flex gap-2">
+              <Link
+                href="/profile"
+                className="flex-1 rounded-md bg-ink px-3 py-2 text-center text-sm text-paper hover:bg-ink/85"
+              >
+                Customize
+              </Link>
+              {onUnclaim && (
+                <button
+                  type="button"
+                  onClick={onUnclaim}
+                  className="flex-1 rounded-md border border-line px-3 py-2 text-sm text-muted hover:border-ink hover:text-ink"
+                >
+                  Pack up
+                </button>
+              )}
+            </div>
+          </>
+        ) : live ? (
+          <>
+            <p className="text-sm text-muted">
+              {firstName} is a real person, somewhere on this floor right now.
+              Say hi in floor chat.
+            </p>
+            <button
+              type="button"
+              onClick={onConnect}
+              disabled={connected}
+              className={`rounded-md border px-3 py-2 text-sm ${
+                connected
+                  ? "cursor-default border-verify/40 text-verify"
+                  : "border-accent text-accent hover:bg-accent-soft"
+              }`}
+            >
+              {connected ? "Connected" : "Connect"}
+            </button>
+          </>
         ) : (
           <div className="flex gap-2">
             <button

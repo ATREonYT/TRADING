@@ -17,6 +17,7 @@ import type {
   Startup,
 } from "@/lib/types";
 import BoothCard from "@/components/BoothCard";
+import OpenStandCard from "@/components/OpenStandCard";
 import ChatPanel from "@/components/ChatPanel";
 import Toast, { type ToastData } from "@/components/Toast";
 import TierTag, { TIER_LABEL } from "@/components/TierTag";
@@ -68,6 +69,10 @@ export default function FloorPage({ params }: { params: { id: string } }) {
   myStartupRef.current = myStartup;
   const dmStartupIdRef = useRef(dmStartupId);
   dmStartupIdRef.current = dmStartupId;
+  const claimsRef = useRef(state.claims);
+  claimsRef.current = state.claims;
+  const activeBoothRef = useRef(activeBooth);
+  activeBoothRef.current = activeBooth;
 
   const nameSet = state.profile.name !== "";
   const tierOk = floor ? TIER_ORDER[state.sub] >= TIER_ORDER[floor.tier] : false;
@@ -138,6 +143,29 @@ export default function FloorPage({ params }: { params: { id: string } }) {
     },
     [floor, connectedIds, actions, showToast],
   );
+
+  const handleClaim = useCallback(
+    (b: BoothInstance) => {
+      const s = myStartupRef.current;
+      if (!floor || !s) return;
+      actions.claimSpot(floor.id, b.spotIndex);
+      const claim = { spotIndex: b.spotIndex, startup: s };
+      handleRef.current?.setMyBooth(claim);
+      netRef.current?.sendBoothSet(claim);
+      setActiveBooth(null);
+      showToast(`Stand claimed. ${s.name} is now on this floor.`);
+    },
+    [floor, actions, showToast],
+  );
+
+  const handleUnclaim = useCallback(() => {
+    if (!floor) return;
+    actions.unclaimSpot(floor.id);
+    handleRef.current?.setMyBooth(null);
+    netRef.current?.sendBoothClear();
+    setActiveBooth(null);
+    showToast("Stand packed up.");
+  }, [floor, actions, showToast]);
 
   const handleSend = useCallback(
     (text: string, scope: "floor" | "dm") => {
@@ -221,39 +249,69 @@ export default function FloorPage({ params }: { params: { id: string } }) {
         // a second tab shares the same profile id but gets its own selfId.
         if (ev.msg.fromId !== net.selfId) setFloorMsgs((m) => [...m.slice(-199), ev.msg]);
       }
+      if (ev.t === "booth_denied") {
+        // Someone else claimed that spot first; revert our local claim.
+        actions.unclaimSpot(f.id);
+        handleRef.current?.setMyBooth(null);
+        showToast("Someone claimed that stand first. Pick another spot.");
+      }
     });
+
+    const claimIdx = claimsRef.current[f.id];
+    const mine = myStartupRef.current;
+    const myClaim =
+      mine && claimIdx !== undefined ? { spotIndex: claimIdx, startup: mine } : undefined;
 
     const handle = createGame({
       canvas,
       floor: f,
       me: profileRef.current,
-      myStartup: myStartupRef.current,
+      myStartup: mine,
+      myClaim,
       startups: startupsRef.current,
       net,
       cb: {
-        onNearBooth: (b) => setNearBooth(b),
+        onNearBooth: (b) => {
+          setNearBooth(b);
+          const active = activeBoothRef.current;
+          if (!active) return;
+          if (!b || b.spotIndex !== active.spotIndex) {
+            // Walked away — the card and the conversation close behind you.
+            setActiveBooth(null);
+            setDmStartupId(null);
+            setTab("floor");
+          } else {
+            // Same stand, fresh instance (the floor was rebuilt) — keep the
+            // card but point it at current data.
+            setActiveBooth(b);
+          }
+        },
         onInteract: (b) => {
           setActiveBooth(b);
-          if (!b.isYours) {
+          // DM opens only for seed-startup booths: their founder is an NPC.
+          // Live-claimed stands have a real owner walking the floor, and your
+          // own booth has you.
+          if (b.startup && !b.isYours && !b.ownerId) {
+            const s = b.startup;
             setDms((prev) =>
-              prev[b.startup.id]
+              prev[s.id]
                 ? prev
                 : {
                     ...prev,
-                    [b.startup.id]: [
+                    [s.id]: [
                       {
                         id: uid(),
-                        fromId: `npc:${b.startup.id}`,
-                        from: b.startup.founder,
-                        text: replyFor(b.startup, ""),
+                        fromId: `npc:${s.id}`,
+                        from: s.founder,
+                        text: replyFor(s, ""),
                         ts: Date.now(),
                         scope: "dm",
-                        peerId: `npc:${b.startup.id}`,
+                        peerId: `npc:${s.id}`,
                       },
                     ],
                   },
             );
-            setDmStartupId(b.startup.id);
+            setDmStartupId(s.id);
             setTab("dm");
           }
         },
@@ -274,7 +332,7 @@ export default function FloorPage({ params }: { params: { id: string } }) {
       for (const t of Object.values(replyTimers.current)) clearTimeout(t);
       replyTimers.current = {};
     };
-  }, [allowed, params.id]);
+  }, [allowed, params.id, actions, showToast]);
 
   useEffect(() => {
     return () => {
@@ -406,7 +464,11 @@ export default function FloorPage({ params }: { params: { id: string } }) {
             <kbd className="micro mr-2 rounded-sm border border-line px-1 py-0.5 text-muted">
               E
             </kbd>
-            talk to {nearBooth.startup.name}
+            {nearBooth.startup
+              ? nearBooth.isYours
+                ? "your stand"
+                : `talk to ${nearBooth.startup.name}`
+              : "open stand"}
           </span>
         </div>
       )}
@@ -414,16 +476,26 @@ export default function FloorPage({ params }: { params: { id: string } }) {
       {/* booth card */}
       {activeBooth && (
         <div className="pointer-events-none absolute right-3 top-16">
-          <BoothCard
-            startup={
-              startups[activeBooth.startup.id] ?? activeBooth.startup
-            }
-            isYours={activeBooth.isYours}
-            connected={connectedIds.has(activeBooth.startup.id)}
-            onConnect={() => handleConnect(activeBooth.startup)}
-            onChat={() => openDm(activeBooth.startup)}
-            onClose={() => setActiveBooth(null)}
-          />
+          {activeBooth.startup ? (
+            <BoothCard
+              startup={startups[activeBooth.startup.id] ?? activeBooth.startup}
+              isYours={activeBooth.isYours}
+              live={Boolean(activeBooth.ownerId) && !activeBooth.isYours}
+              connected={connectedIds.has(activeBooth.startup.id)}
+              onConnect={() => activeBooth.startup && handleConnect(activeBooth.startup)}
+              onChat={() => activeBooth.startup && openDm(activeBooth.startup)}
+              onUnclaim={activeBooth.isYours ? handleUnclaim : undefined}
+              onClose={() => setActiveBooth(null)}
+            />
+          ) : (
+            <OpenStandCard
+              floorName={floor.name}
+              hasStartup={Boolean(myStartup)}
+              claimedElsewhere={state.claims[floor.id] !== undefined}
+              onClaim={() => handleClaim(activeBooth)}
+              onClose={() => setActiveBooth(null)}
+            />
+          )}
         </div>
       )}
 

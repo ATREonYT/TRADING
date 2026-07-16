@@ -13,7 +13,7 @@
  *   the last known MoveState. If both fail, it goes dormant.
  */
 
-import type { MoveState, NetClient, NetEvent, PlayerProfile } from "@/lib/types";
+import type { BoothClaim, MoveState, NetClient, NetEvent, PlayerProfile } from "@/lib/types";
 
 const RECONNECT_ATTEMPTS = 2;
 const RECONNECT_DELAY_MS = 3000;
@@ -35,6 +35,7 @@ export function createNetClient(wsUrl?: string): NetClient {
   let floorId = "";
   let me: PlayerProfile | null = null;
   let lastMove: MoveState | null = null;
+  let myClaim: BoothClaim | null = null; // re-announced with join on reconnect
   let attemptsLeft = RECONNECT_ATTEMPTS;
   let reconnectAttempt = false; // is the current socket a reconnect attempt?
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -166,7 +167,8 @@ export function createNetClient(wsUrl?: string): NetClient {
       reconnectAttempt = false;
       attemptsLeft = RECONNECT_ATTEMPTS; // a future outage gets a fresh budget
       if (me && lastMove) {
-        sock.send(JSON.stringify({ t: "join", player: me, s: lastMove }));
+        // JSON.stringify drops the claim key when it is null -> undefined.
+        sock.send(JSON.stringify({ t: "join", player: me, s: lastMove, claim: myClaim ?? undefined }));
       }
     };
 
@@ -206,7 +208,7 @@ export function createNetClient(wsUrl?: string): NetClient {
       return selfId;
     },
 
-    connect(fid: string, m: PlayerProfile, spawn: MoveState): void {
+    connect(fid: string, m: PlayerProfile, spawn: MoveState, claim?: BoothClaim): void {
       if (!isBrowser()) return; // SSR no-op
       // Calling connect while active (e.g. switching floors) silently
       // replaces the previous connection without emitting stale events.
@@ -215,6 +217,7 @@ export function createNetClient(wsUrl?: string): NetClient {
       floorId = fid;
       me = m;
       lastMove = spawn;
+      myClaim = claim ?? null;
       selfId = m.id; // provisional; the server may suffix it (welcome.selfId)
       reconnectAttempt = false;
       attemptsLeft = RECONNECT_ATTEMPTS;
@@ -233,6 +236,18 @@ export function createNetClient(wsUrl?: string): NetClient {
       lastMove = s; // always remembered, so a reconnect joins in place
       if (phase !== "open" || !ws || ws.readyState !== ws.OPEN) return;
       ws.send(JSON.stringify({ t: "move", s }));
+    },
+
+    sendBoothSet(claim: BoothClaim): void {
+      myClaim = claim; // survives reconnect: join re-announces the stand
+      if (phase !== "open" || !ws || ws.readyState !== ws.OPEN) return;
+      ws.send(JSON.stringify({ t: "booth_set", claim }));
+    },
+
+    sendBoothClear(): void {
+      myClaim = null;
+      if (phase !== "open" || !ws || ws.readyState !== ws.OPEN) return;
+      ws.send(JSON.stringify({ t: "booth_clear" }));
     },
 
     sendChat(text: string, scope: "floor" | "dm", peerId?: string): void {

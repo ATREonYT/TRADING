@@ -15,15 +15,16 @@ import type { FloorDef } from "@/lib/types";
 
 export const FLOORS: FloorDef[] = [
   {
-    // 34x22. Two rows of four booths.
+    // 34x28. Two rows of four seed booths plus a bottom row of four open stands.
     // Row A: y=3 (zone rows 3-5, apron 6). Row B: y=13 (zone rows 13-15, apron 16).
+    // Row C (claimable): y=21 (zone rows 21-23, apron 24), walls at 0 and 27.
     // x = 3 / 11 / 19 / 27 -> rightmost zone ends at col 30, walls at 0 and 33.
     id: "main-hall",
     name: "Main Hall",
     tagline: "The free floor. Everyone starts here; a surprising number never leave.",
     tier: "free",
     width: 34,
-    height: 22,
+    height: 28,
     theme: {
       floorA: "#D8D2C4",
       floorB: "#D1CABA",
@@ -39,6 +40,10 @@ export const FLOORS: FloorDef[] = [
       { x: 11, y: 13 },
       { x: 19, y: 13 },
       { x: 27, y: 13 },
+      { x: 3, y: 21 },
+      { x: 11, y: 21 },
+      { x: 19, y: 21 },
+      { x: 27, y: 21 },
     ],
     startupIds: [
       "soup-ticket",
@@ -61,7 +66,7 @@ export const FLOORS: FloorDef[] = [
     tagline: "Folding tables, real users, no adult supervision. One spot has your name on it.",
     tier: "free",
     width: 26,
-    height: 18,
+    height: 26,
     theme: {
       floorA: "#CBB89A",
       floorB: "#C2AE8E",
@@ -75,6 +80,8 @@ export const FLOORS: FloorDef[] = [
       { x: 3, y: 11 },
       { x: 19, y: 11 },
       { x: 11, y: 11 }, // front row center — reserved for you
+      { x: 7, y: 19 }, // open stands (claimable): zone rows 19-21, apron 22, wall at 25
+      { x: 15, y: 19 },
     ],
     startupIds: [
       "mudroom",
@@ -94,7 +101,7 @@ export const FLOORS: FloorDef[] = [
     tagline: "Verified revenue only past this door. The lanterns are decorative; the MRR is not.",
     tier: "pro",
     width: 28,
-    height: 18,
+    height: 26,
     theme: {
       floorA: "#4A4A52",
       floorB: "#44444C",
@@ -108,6 +115,8 @@ export const FLOORS: FloorDef[] = [
       { x: 3, y: 11 },
       { x: 12, y: 11 },
       { x: 21, y: 11 },
+      { x: 7, y: 19 }, // open stands (claimable): zone rows 19-21, apron 22, wall at 25
+      { x: 16, y: 19 },
     ],
     startupIds: [
       "wrenchlist",
@@ -125,7 +134,7 @@ export const FLOORS: FloorDef[] = [
     tagline: "Everyone on this floor is looking for the other half of their cap table. Yes, everyone.",
     tier: "founder",
     width: 28,
-    height: 18,
+    height: 26,
     theme: {
       floorA: "#39493E",
       floorB: "#344439",
@@ -139,6 +148,8 @@ export const FLOORS: FloorDef[] = [
       { x: 3, y: 11 },
       { x: 12, y: 11 },
       { x: 21, y: 11 },
+      { x: 7, y: 19 }, // open stands (claimable): zone rows 19-21, apron 22, wall at 25
+      { x: 16, y: 19 },
     ],
     startupIds: [
       "second-stove",

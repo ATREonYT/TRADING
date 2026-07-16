@@ -55,11 +55,15 @@ export type GlyphId =
   | "wave"
   | "star";
 
+export type CarpetPattern = "solid" | "border" | "stripes";
+
 export interface BoothTheme {
   carpet: string; // hex
   banner: string; // hex
   sign: string; // short text on the banner, <= 12 chars
   glyph: GlyphId;
+  /** Carpet treatment; absent = "solid" (all seed booths). */
+  pattern?: CarpetPattern;
 }
 
 export interface DialogueScript {
@@ -90,8 +94,19 @@ export interface Startup {
 export interface BoothInstance {
   /** Top-left tile of the 4x3 booth zone. */
   spot: { x: number; y: number };
-  startup: Startup;
+  /** Index into floor.boothSpots — the stable identity used for claims. */
+  spotIndex: number;
+  /** null = vacant stand, open to claim. */
+  startup: Startup | null;
   isYours: boolean;
+  /** Wire id of the live player whose claimed stand this is (unset for seed booths). */
+  ownerId?: string;
+}
+
+/** A player's claim on a floor spot, carried over the wire. */
+export interface BoothClaim {
+  spotIndex: number;
+  startup: Startup;
 }
 
 // ---------- floors (the "servers" you join) ----------
@@ -144,12 +159,21 @@ export interface RemotePlayer {
 }
 
 export type NetEvent =
-  | { t: "welcome"; selfId: string; players: RemotePlayer[] }
+  | { t: "welcome"; selfId: string; players: RemotePlayer[]; booths: RemoteBooth[] }
   | { t: "player_join"; player: RemotePlayer }
   | { t: "player_move"; id: string; s: MoveState }
   | { t: "player_leave"; id: string }
+  | { t: "booth_set"; ownerId: string; claim: BoothClaim }
+  | { t: "booth_clear"; ownerId: string }
+  /** Sent only to a claimant whose spot was already taken. */
+  | { t: "booth_denied"; spotIndex: number }
   | { t: "chat"; msg: ChatMsg }
   | { t: "status"; online: boolean; count: number };
+
+export interface RemoteBooth {
+  ownerId: string;
+  claim: BoothClaim;
+}
 
 /**
  * Transport to the floor server. lib/net.ts exports
@@ -161,10 +185,14 @@ export type NetEvent =
 export interface NetClient {
   readonly online: boolean;
   readonly selfId: string;
-  connect(floorId: string, me: PlayerProfile, spawn: MoveState): void;
+  connect(floorId: string, me: PlayerProfile, spawn: MoveState, claim?: BoothClaim): void;
   disconnect(): void;
   sendMove(s: MoveState): void;
   sendChat(text: string, scope: "floor" | "dm", peerId?: string): void;
+  /** Claim (or move) this player's stand; the server relays booth_set to the room. */
+  sendBoothSet(claim: BoothClaim): void;
+  /** Pack up this player's stand; the server relays booth_clear to the room. */
+  sendBoothClear(): void;
   /** Subscribe to events; returns an unsubscribe function. */
   on(cb: (ev: NetEvent) => void): () => void;
 }
@@ -184,8 +212,10 @@ export interface GameOptions {
   canvas: HTMLCanvasElement;
   floor: FloorDef;
   me: PlayerProfile;
-  /** The user's own startup, rendered at floor.reservedSpot when present. */
+  /** The user's own startup (also present in `startups`). */
   myStartup?: Startup;
+  /** This player's claimed spot on this floor, if any; rendered as their stand. */
+  myClaim?: BoothClaim;
   /** All startups by id (seed data + the user's own). */
   startups: Record<string, Startup>;
   net: NetClient;
@@ -195,12 +225,15 @@ export interface GameOptions {
 /**
  * game/engine.ts exports `createGame(opts: GameOptions): GameHandle`.
  * The engine owns the canvas render loop, keyboard input, collision, camera,
- * NPC founders (wandering near their booths), and remote player rendering.
+ * NPC founders (wandering near their booths), remote player rendering, and
+ * live claimed-booth updates (booth_set / booth_clear / player_leave).
  */
 export interface GameHandle {
   destroy(): void;
   /** Disable movement keys while a text input is focused. */
   setInputEnabled(v: boolean): void;
+  /** Update the local player's stand (claim, move, or null = pack up) and rebuild the floor. */
+  setMyBooth(claim: BoothClaim | null): void;
 }
 
 // ---------- client persistence (lib/store.ts) ----------
@@ -218,6 +251,8 @@ export interface AppState {
   sub: SubTier;
   connections: Connection[];
   myStartup?: Startup;
+  /** Claimed stand per floor: floorId -> boothSpots index. */
+  claims: Record<string, number>;
 }
 
 export const TILE = 32; // px per tile — single source of truth

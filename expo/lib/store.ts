@@ -20,6 +20,7 @@ import type {
   Startup,
   SubTier,
 } from "@/lib/types";
+import { FLOORS } from "@/lib/data/floors";
 
 const STORAGE_KEY = "founderfloor:v1";
 
@@ -32,6 +33,10 @@ export interface StoreActions {
   saveMyStartup(s: Startup): void;
   clearMyStartup(): void;
   verifyMyRevenue(monthly: number, goalProgress: number): void;
+  /** Claim (or move) your stand on a floor: floorId -> boothSpots index. */
+  claimSpot(floorId: string, spotIndex: number): void;
+  /** Pack up your stand on a floor. */
+  unclaimSpot(floorId: string): void;
 }
 
 // ---------- defaults ----------
@@ -41,6 +46,7 @@ function defaultState(): AppState {
     profile: { id: "", name: "", look: { skin: 0, outfit: 0, hair: 0 } },
     sub: "free",
     connections: [],
+    claims: {},
   };
 }
 
@@ -184,6 +190,18 @@ function sanitize(raw: unknown): AppState {
     };
   }
 
+  if (r.claims && typeof r.claims === "object" && !Array.isArray(r.claims)) {
+    for (const [k, v] of Object.entries(r.claims as Record<string, unknown>)) {
+      const idx = Math.trunc(numOr(v, -1));
+      if (idx >= 0 && idx <= 63 && k.length <= 64) base.claims[k] = idx;
+    }
+  } else if (base.myStartup) {
+    // Migration from the reserved-spot era: booths used to auto-appear at
+    // Indie Alley's front-row-center spot. Keep that stand standing.
+    const alley = FLOORS.find((f) => f.id === "indie-alley");
+    if (alley?.reservedSpot !== undefined) base.claims["indie-alley"] = alley.reservedSpot;
+  }
+
   return base;
 }
 
@@ -306,7 +324,8 @@ const ACTIONS: StoreActions = {
   clearMyStartup(): void {
     ensureClientInit();
     const { myStartup: _dropped, ...rest } = state;
-    setState({ ...rest });
+    // A startup that no longer exists can't hold stands anywhere.
+    setState({ ...rest, claims: {} });
   },
 
   verifyMyRevenue(monthly: number, goalProgress: number): void {
@@ -321,6 +340,22 @@ const ACTIONS: StoreActions = {
         goalProgress: clamp01(goalProgress),
       },
     });
+  },
+
+  claimSpot(floorId: string, spotIndex: number): void {
+    ensureClientInit();
+    if (!state.myStartup) return; // nothing to put on the stand
+    const idx = Math.trunc(numOr(spotIndex, -1));
+    if (idx < 0) return;
+    setState({ ...state, claims: { ...state.claims, [floorId]: idx } });
+  },
+
+  unclaimSpot(floorId: string): void {
+    ensureClientInit();
+    if (state.claims[floorId] === undefined) return;
+    const claims = { ...state.claims };
+    delete claims[floorId];
+    setState({ ...state, claims });
   },
 };
 

@@ -8,6 +8,7 @@
 
 import { TILE } from "../lib/types";
 import type {
+  BoothClaim,
   BoothInstance,
   Dir,
   GameHandle,
@@ -19,8 +20,9 @@ import type {
 import { SPRITE_H, SPRITE_W, SpriteBank } from "./sprites";
 import type { AvatarFrames } from "./sprites";
 import { buildFloor } from "./tilemap";
-import type { Cam, Drawable } from "./tilemap";
+import type { Cam, ClaimEntry, Drawable } from "./tilemap";
 import { makeNpcs, updateNpcs } from "./npc";
+import type { Npc } from "./npc";
 
 const ZOOM = 2; // world px -> screen px
 const SPEED = 140; // player px/s
@@ -43,10 +45,25 @@ export function createGame(opts: GameOptions): GameHandle {
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("FounderFloor: 2d canvas context unavailable");
 
-  const built = buildFloor(floor, opts.startups, opts.myStartup);
+  // ---------- floor build (rebuilt whenever a stand is claimed / packed up) ----------
+
+  let myClaim: BoothClaim | null = opts.myClaim ?? null;
+  const remoteClaims = new Map<string, BoothClaim>(); // ownerId -> claim
+
+  const claimEntries = (): ClaimEntry[] => {
+    const list: ClaimEntry[] = [];
+    if (myClaim) list.push({ claim: myClaim, isYours: true, ownerId: net.selfId });
+    for (const [ownerId, claim] of remoteClaims) {
+      if (ownerId === net.selfId) continue;
+      list.push({ claim, isYours: false, ownerId });
+    }
+    return list;
+  };
+
   const bank = new SpriteBank();
   const myFrames = bank.makeAvatar(me.look);
-  const npcs = makeNpcs(built.booths, bank);
+  let built = buildFloor(floor, opts.startups, claimEntries());
+  let npcs: Npc[] = makeNpcs(built.booths, bank);
   const mapW = built.widthPx;
   const mapH = built.heightPx;
 
@@ -68,9 +85,7 @@ export function createGame(opts: GameOptions): GameHandle {
 
   // ---------- spawn: bottom-center, nearest walkable tile ----------
 
-  const findSpawn = (): { x: number; y: number } => {
-    const cx = Math.floor(floor.width / 2);
-    const cy = floor.height - 2;
+  const findNearestWalkable = (cx: number, cy: number): { x: number; y: number } => {
     const maxR = Math.max(floor.width, floor.height);
     for (let r = 0; r <= maxR; r++) {
       for (let dy = -r; dy <= r; dy++) {
@@ -87,7 +102,7 @@ export function createGame(opts: GameOptions): GameHandle {
     return { x: mapW / 2, y: mapH / 2 }; // pathological map; land somewhere
   };
 
-  const spawn = findSpawn();
+  const spawn = findNearestWalkable(Math.floor(floor.width / 2), floor.height - 2);
   const player: MoveState = { x: spawn.x, y: spawn.y, dir: "up", moving: false };
   let playerAnimT = 0;
 
@@ -112,6 +127,11 @@ export function createGame(opts: GameOptions): GameHandle {
       case "welcome":
         remotes.clear();
         for (const p of ev.players) addRemote(p);
+        remoteClaims.clear();
+        for (const b of ev.booths) {
+          if (b.ownerId !== net.selfId) remoteClaims.set(b.ownerId, b.claim);
+        }
+        rebuild();
         presence();
         break;
       case "player_join":
@@ -125,17 +145,36 @@ export function createGame(opts: GameOptions): GameHandle {
       }
       case "player_leave":
         remotes.delete(ev.id);
+        // their stand packs up with them
+        if (remoteClaims.delete(ev.id)) rebuild();
         presence();
         break;
+      case "booth_set":
+        if (ev.ownerId !== net.selfId) {
+          remoteClaims.set(ev.ownerId, ev.claim);
+          rebuild();
+        }
+        break;
+      case "booth_clear":
+        if (remoteClaims.delete(ev.ownerId)) rebuild();
+        break;
+      case "booth_denied":
+        break; // the UI reverts the claim and explains
       case "status":
-        if (!ev.online) remotes.clear();
+        if (!ev.online) {
+          remotes.clear();
+          if (remoteClaims.size > 0) {
+            remoteClaims.clear();
+            rebuild();
+          }
+        }
         presence();
         break;
       case "chat":
         break; // chat is the UI's problem
     }
   });
-  net.connect(floor.id, me, { ...player });
+  net.connect(floor.id, me, { ...player }, myClaim ?? undefined);
 
   let sendAcc = 0;
   let wasMoving = false;
@@ -211,6 +250,24 @@ export function createGame(opts: GameOptions): GameHandle {
     }
     return best;
   };
+
+  // ---------- floor rebuild (claims changed) ----------
+
+  function rebuild(): void {
+    built = buildFloor(floor, opts.startups, claimEntries());
+    npcs = makeNpcs(built.booths, bank);
+    // unstick the player if a stand just appeared underfoot
+    if (blocked(player.x, player.y)) {
+      const p = findNearestWalkable(Math.floor(player.x / TILE), Math.floor(player.y / TILE));
+      player.x = p.x;
+      player.y = p.y;
+    }
+    // old BoothInstance references are stale — recompute and re-announce
+    const prevIdx = nearBooth ? nearBooth.spotIndex : -1;
+    nearBooth = computeNear();
+    const newIdx = nearBooth ? nearBooth.spotIndex : -1;
+    if (nearBooth || newIdx !== prevIdx) cb.onNearBooth(nearBooth);
+  }
 
   const onClick = (e: MouseEvent): void => {
     const r = canvas.getBoundingClientRect();
@@ -467,6 +524,10 @@ export function createGame(opts: GameOptions): GameHandle {
     setInputEnabled(v: boolean): void {
       inputEnabled = v;
       if (!v) keys.clear();
+    },
+    setMyBooth(claim: BoothClaim | null): void {
+      myClaim = claim;
+      rebuild();
     },
     destroy(): void {
       if (destroyed) return;

@@ -7,7 +7,7 @@
  */
 
 import { TILE } from "../lib/types";
-import type { BoothInstance, Dir } from "../lib/types";
+import type { BoothInstance, Dir, Startup } from "../lib/types";
 import { SPRITE_H, SPRITE_W } from "./sprites";
 import type { AvatarFrames, SpriteBank } from "./sprites";
 import { hashStr, mulberry32 } from "./tilemap";
@@ -35,15 +35,15 @@ export class Npc {
   private pause: number;
   private animT = 0;
 
-  constructor(booth: BoothInstance, bank: SpriteBank) {
+  constructor(booth: BoothInstance, startup: Startup, bank: SpriteBank) {
     this.booth = booth;
-    this.name = booth.startup.founder;
-    this.frames = bank.makeAvatar(booth.startup.founderLook);
+    this.name = startup.founder;
+    this.frames = bank.makeAvatar(startup.founderLook);
     this.minX = booth.spot.x * TILE + EDGE_PAD;
     this.maxX = (booth.spot.x + 4) * TILE - EDGE_PAD;
     // feet near the bottom of the founder-lane row
     this.y = (booth.spot.y + 2) * TILE - 6;
-    this.rng = mulberry32(hashStr(booth.startup.id));
+    this.rng = mulberry32(hashStr(startup.id));
     this.speed = 20 + this.rng() * 22;
     this.restless = this.rng();
     this.bobSeed = this.rng() * Math.PI * 2;
@@ -109,10 +109,14 @@ export class Npc {
   }
 }
 
-/** One NPC per occupied booth (vacant stalls get nobody, which is the point).
- * The player's own booth gets no NPC either — the owner is present in person. */
+/** One NPC per seed booth. Vacant stands get nobody, and claimed stands get
+ * nobody either — their owner (you, or a live remote player) is present in person. */
 export function makeNpcs(booths: BoothInstance[], bank: SpriteBank): Npc[] {
-  return booths.filter((b) => !b.isYours).map((b) => new Npc(b, bank));
+  const staffed: Npc[] = [];
+  for (const b of booths) {
+    if (b.startup && !b.isYours && !b.ownerId) staffed.push(new Npc(b, b.startup, bank));
+  }
+  return staffed;
 }
 
 /** Advance every NPC one frame; the engine calls this before drawing. */

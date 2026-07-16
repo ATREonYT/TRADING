@@ -6,14 +6,19 @@
  *
  * Protocol (JSON text frames) mirrors NetEvent in lib/types.ts:
  *   client -> server:
- *     { t: "join", player: { id, name, look }, s: MoveState }   (first frame)
+ *     { t: "join", player: { id, name, look }, s: MoveState, claim? }  (first frame)
  *     { t: "move", s: MoveState }
  *     { t: "chat", text, scope: "floor" | "dm", peerId? }
+ *     { t: "booth_set", claim: { spotIndex, startup } }
+ *     { t: "booth_clear" }
  *   server -> client:
- *     { t: "welcome", selfId, players: RemotePlayer[] }
+ *     { t: "welcome", selfId, players: RemotePlayer[], booths: [{ ownerId, claim }] }
  *     { t: "player_join", player: RemotePlayer }
  *     { t: "player_move", id, s: MoveState }
- *     { t: "player_leave", id }
+ *     { t: "player_leave", id }        (a leaver's stand packs up with them)
+ *     { t: "booth_set", ownerId, claim }
+ *     { t: "booth_clear", ownerId }
+ *     { t: "booth_denied", spotIndex }  (only to a claimant whose spot was taken)
  *     { t: "chat", msg: ChatMsg }
  *     { t: "status", online: true, count }
  *
@@ -76,6 +81,71 @@ function sanitizeName(name) {
 
 function sanitizeText(text) {
   return typeof text === "string" ? text.trim().slice(0, MAX_TEXT_LEN) : "";
+}
+
+const GLYPHS = new Set(["bolt", "leaf", "coin", "chip", "flask", "rocket", "heart", "cube", "wave", "star"]);
+const PATTERNS = new Set(["solid", "border", "stripes"]);
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+const MAX_SPOT_INDEX = 63;
+
+function sanitizeStr(v, max, fallback = "") {
+  return typeof v === "string" ? v.trim().slice(0, max) : fallback;
+}
+
+/**
+ * Rebuild a claim from an untrusted frame: only known fields survive, all of
+ * them clamped. Returns null if the claim is structurally unusable.
+ */
+function sanitizeClaim(claim) {
+  if (!claim || typeof claim !== "object") return null;
+  const spotIndex = Number(claim.spotIndex);
+  if (!Number.isInteger(spotIndex) || spotIndex < 0 || spotIndex > MAX_SPOT_INDEX) return null;
+  const s = claim.startup;
+  if (!s || typeof s !== "object") return null;
+  const name = sanitizeStr(s.name, 40);
+  if (!name) return null;
+  const booth = s.booth && typeof s.booth === "object" ? s.booth : {};
+  const goalProgress = Number(s.goalProgress);
+  const verifiedRevenue = Number(s.verifiedRevenue);
+  return {
+    spotIndex,
+    startup: {
+      id: sanitizeStr(s.id, MAX_ID_LEN, "mine"),
+      name,
+      oneLiner: sanitizeStr(s.oneLiner, 80),
+      pitch: sanitizeStr(s.pitch, 600),
+      founder: sanitizeStr(s.founder, MAX_NAME_LEN, "founder"),
+      founderLook: sanitizeLook(s.founderLook),
+      category: sanitizeStr(s.category, 32),
+      goal: sanitizeStr(s.goal, 80),
+      goalProgress: Number.isFinite(goalProgress) ? Math.min(1, Math.max(0, goalProgress)) : 0,
+      verifiedRevenue: Number.isFinite(verifiedRevenue) ? Math.max(0, verifiedRevenue) : 0,
+      seekingCofounder: s.seekingCofounder === true,
+      booth: {
+        carpet: HEX_COLOR.test(booth.carpet) ? booth.carpet : "#C2B8A3",
+        banner: HEX_COLOR.test(booth.banner) ? booth.banner : "#5C5548",
+        sign: sanitizeStr(booth.sign, 12) || name.slice(0, 12).toUpperCase(),
+        glyph: GLYPHS.has(booth.glyph) ? booth.glyph : "star",
+        pattern: PATTERNS.has(booth.pattern) ? booth.pattern : "solid",
+      },
+    },
+  };
+}
+
+/** All live claims in a room, excluding one player. */
+function roomBooths(room, exceptId) {
+  const out = [];
+  for (const c of room.values()) {
+    if (c.id !== exceptId && c.claim) out.push({ ownerId: c.id, claim: c.claim });
+  }
+  return out;
+}
+
+function spotTakenBy(room, spotIndex, exceptId) {
+  for (const c of room.values()) {
+    if (c.id !== exceptId && c.claim && c.claim.spotIndex === spotIndex) return c.id;
+  }
+  return null;
 }
 
 // ---------- wire helpers ----------
@@ -153,14 +223,36 @@ wss.on("connection", (ws, req) => {
     let id = rawId;
     for (let n = 2; room.has(id); n++) id = `${rawId}-${n}`;
 
-    client = { ws, id, name, look, s };
+    client = { ws, id, name, look, s, claim: null };
     room.set(id, client);
 
     const others = [...room.values()].filter((c) => c.id !== id).map(asRemotePlayer);
-    send(ws, { t: "welcome", selfId: id, players: others });
+    send(ws, { t: "welcome", selfId: id, players: others, booths: roomBooths(room, id) });
     broadcast(room, { t: "player_join", player: asRemotePlayer(client) }, id);
     broadcast(room, { t: "status", online: true, count: room.size });
     console.log(`[ws] join  floor=${floorId} id=${id} name="${name}" (${room.size} online)`);
+
+    // a stand carried in with the join frame goes through the same arbitration
+    if (msg.claim !== undefined) handleBoothSet({ claim: msg.claim });
+  }
+
+  function handleBoothSet(msg) {
+    const claim = sanitizeClaim(msg.claim);
+    if (!claim) return;
+    const holder = spotTakenBy(room, claim.spotIndex, client.id);
+    if (holder) {
+      // first claim wins; the loser's UI reverts and explains
+      send(ws, { t: "booth_denied", spotIndex: claim.spotIndex });
+      return;
+    }
+    client.claim = claim;
+    broadcast(room, { t: "booth_set", ownerId: client.id, claim }, client.id);
+  }
+
+  function handleBoothClear() {
+    if (!client.claim) return;
+    client.claim = null;
+    broadcast(room, { t: "booth_clear", ownerId: client.id }, client.id);
   }
 
   function handleMove(msg) {
@@ -228,6 +320,12 @@ wss.on("connection", (ws, req) => {
         break;
       case "chat":
         handleChat(msg);
+        break;
+      case "booth_set":
+        handleBoothSet(msg);
+        break;
+      case "booth_clear":
+        handleBoothClear();
         break;
       default:
         break; // unknown frame types are ignored

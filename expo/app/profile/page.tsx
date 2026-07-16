@@ -4,8 +4,15 @@ import { useEffect, useState } from "react";
 import { useAppState } from "@/lib/store";
 import { RANKS, rankFor } from "@/lib/ranks";
 import { FLOORS } from "@/lib/data/floors";
-import { TIER_ORDER, type GlyphId, type Startup, type SubTier } from "@/lib/types";
+import {
+  TIER_ORDER,
+  type CarpetPattern,
+  type GlyphId,
+  type Startup,
+  type SubTier,
+} from "@/lib/types";
 import AvatarPicker from "@/components/AvatarPicker";
+import BoothPreview from "@/components/BoothPreview";
 import RankBadge from "@/components/RankBadge";
 import PixelGlyph, { GLYPH_IDS } from "@/components/PixelGlyph";
 import { TIER_LABEL, TIER_PRICE } from "@/components/TierTag";
@@ -13,13 +20,23 @@ import Toast, { type ToastData } from "@/components/Toast";
 
 const SWATCHES: string[] = [
   "#8C3B2E",
+  "#C4562B",
   "#4E6E4E",
+  "#7A8C50",
   "#3B5B92",
+  "#57829B",
   "#6B4E71",
   "#2F6F6A",
   "#A98C5B",
+  "#8A6B4D",
   "#555049",
   "#B08D2E",
+];
+
+const PATTERNS: { id: CarpetPattern; label: string }[] = [
+  { id: "solid", label: "Solid" },
+  { id: "border", label: "Border" },
+  { id: "stripes", label: "Stripes" },
 ];
 
 const TIER_BLURB: Record<SubTier, string> = {
@@ -39,6 +56,7 @@ interface BoothForm {
   banner: string;
   sign: string;
   glyph: GlyphId;
+  pattern: CarpetPattern;
 }
 
 const EMPTY_FORM: BoothForm = {
@@ -48,10 +66,11 @@ const EMPTY_FORM: BoothForm = {
   category: "",
   goal: "",
   seekingCofounder: false,
-  carpet: SWATCHES[1],
+  carpet: SWATCHES[2],
   banner: SWATCHES[0],
   sign: "",
   glyph: "bolt",
+  pattern: "solid",
 };
 
 function formFrom(s: Startup): BoothForm {
@@ -66,6 +85,7 @@ function formFrom(s: Startup): BoothForm {
     banner: s.booth.banner,
     sign: s.booth.sign,
     glyph: s.booth.glyph,
+    pattern: s.booth.pattern ?? "solid",
   };
 }
 
@@ -182,10 +202,25 @@ export default function ProfilePage() {
         banner: form.banner,
         sign: form.sign.trim().slice(0, 12) || form.name.trim().slice(0, 12),
         glyph: form.glyph,
+        pattern: form.pattern,
       },
     };
     actions.saveMyStartup(startup);
     setToast({ id: Date.now(), text: "Booth saved. See you on the floor." });
+  };
+
+  const randomizeTheme = () => {
+    const pick = <T,>(arr: readonly T[]): T => arr[Math.floor(Math.random() * arr.length)]!;
+    let banner = pick(SWATCHES);
+    let carpet = pick(SWATCHES);
+    while (carpet === banner) carpet = pick(SWATCHES);
+    setForm((f) => ({
+      ...f,
+      banner,
+      carpet,
+      glyph: pick(GLYPH_IDS),
+      pattern: pick(PATTERNS).id,
+    }));
   };
 
   const verify = () => {
@@ -368,6 +403,35 @@ export default function ProfilePage() {
                   ))}
                 </div>
               </div>
+              <div>
+                <span className="micro mb-1.5 block text-muted">Carpet pattern</span>
+                <div className="flex gap-1.5" role="group" aria-label="Carpet pattern">
+                  {PATTERNS.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => set("pattern", p.id)}
+                      aria-pressed={form.pattern === p.id}
+                      className={`rounded-sm border px-3 py-1.5 text-xs ${
+                        form.pattern === p.id
+                          ? "border-accent text-accent ring-2 ring-accent ring-offset-1 ring-offset-panel"
+                          : "border-line text-muted hover:border-muted hover:text-ink"
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <button
+                  type="button"
+                  onClick={randomizeTheme}
+                  className="rounded-md border border-line px-3 py-1.5 text-xs text-muted hover:border-ink hover:text-ink"
+                >
+                  Dealer&rsquo;s choice — randomize the look
+                </button>
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4">
@@ -404,30 +468,21 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* live booth preview */}
-          <div>
+          {/* live booth preview — the exact in-game rendering */}
+          <div className="md:sticky md:top-6 md:self-start">
             <span className="micro mb-2 block text-muted">Preview</span>
-            <div className="panel overflow-hidden">
-              <div
-                className="flex items-center justify-center gap-2 px-3 py-2.5"
-                style={{ backgroundColor: form.banner }}
-              >
-                <PixelGlyph glyph={form.glyph} color="#F2EFE7" size={14} />
-                <span className="micro truncate text-paper">
-                  {form.sign.trim() || form.name.trim().slice(0, 12) || "YOUR SIGN"}
-                </span>
-              </div>
-              <div
-                className="h-24"
-                style={{
-                  backgroundColor: form.carpet,
-                  backgroundImage:
-                    "repeating-linear-gradient(45deg, rgba(255,255,255,0.06) 0 8px, transparent 8px 16px)",
-                }}
-              />
-            </div>
+            <BoothPreview
+              carpet={form.carpet}
+              banner={form.banner}
+              sign={form.sign.trim() || form.name.trim().slice(0, 12)}
+              glyph={form.glyph}
+              pattern={form.pattern}
+              founderLook={state.profile.look}
+            />
             <p className="mt-2 text-xs leading-relaxed text-muted">
-              Banner and carpet, roughly as they render on the floor.
+              Pixel for pixel, this is your stand on the floor — with you
+              behind the counter. Walk up to any OPEN SPOT stand in a hall and
+              claim it.
             </p>
           </div>
         </div>

@@ -8,7 +8,7 @@
  */
 
 import { TILE } from "../lib/types";
-import type { BoothInstance, FloorDef, GlyphId, Startup } from "../lib/types";
+import type { BoothClaim, BoothInstance, FloorDef, GlyphId, Startup } from "../lib/types";
 import { drawGlyph, luma, shade } from "./sprites";
 
 // ---------- shared shapes ----------
@@ -27,10 +27,17 @@ export interface Drawable {
   draw(ctx: CanvasRenderingContext2D): void;
 }
 
+/** A live player's stand on this floor (the local player's has isYours=true). */
+export interface ClaimEntry {
+  claim: BoothClaim;
+  isYours: boolean;
+  ownerId?: string;
+}
+
 export interface BuiltFloor {
   widthPx: number;
   heightPx: number;
-  /** Occupied booths only (vacant stalls are scenery, not interactable). */
+  /** Every booth spot — occupied ones carry a startup, vacant stands carry null. */
   booths: BoothInstance[];
   /** Tile-coordinate walkability. Out-of-bounds counts as solid. */
   solid(tx: number, ty: number): boolean;
@@ -80,18 +87,13 @@ const ACCENT = "#D9480F";
 
 const T = TILE;
 
-interface VacantSpot {
-  x: number;
-  y: number;
-  open: boolean; // reserved spot without a user startup -> "OPEN SPOT" sign
-}
 
 // ---------- builder ----------
 
 export function buildFloor(
   floor: FloorDef,
   startups: Record<string, Startup>,
-  myStartup?: Startup
+  claims: ClaimEntry[] = []
 ): BuiltFloor {
   const w = floor.width;
   const h = floor.height;
@@ -126,29 +128,41 @@ export function buildFloor(
     });
   }
 
-  // ----- booth assignment -----
+  // ----- booth assignment: seed startups first, then live claims on leftovers -----
+  const claimBySpot = new Map<number, ClaimEntry>();
+  for (const c of claims) claimBySpot.set(c.claim.spotIndex, c);
+
   const booths: BoothInstance[] = [];
-  const vacants: VacantSpot[] = [];
   let nextStartup = 0;
   floor.boothSpots.forEach((spot, i) => {
     // solid: banner wall, founder lane (players keep out) and counter
     for (let dy = 0; dy < 3; dy++) for (let dx = 0; dx < 4; dx++) mark(spot.x + dx, spot.y + dy);
-    if (i === floor.reservedSpot) {
-      if (myStartup) booths.push({ spot: { x: spot.x, y: spot.y }, startup: myStartup, isYours: true });
-      else vacants.push({ x: spot.x, y: spot.y, open: true });
-      return;
+    const base = { spot: { x: spot.x, y: spot.y }, spotIndex: i };
+    // seed booths own their spots outright; the reserved spot skips seeding
+    if (i !== floor.reservedSpot) {
+      const id = floor.startupIds[nextStartup++];
+      const s = id !== undefined ? startups[id] : undefined;
+      if (s) {
+        booths.push({ ...base, startup: s, isYours: false });
+        return;
+      }
     }
-    const id = floor.startupIds[nextStartup++];
-    const s = id !== undefined ? startups[id] : undefined;
-    if (s) booths.push({ spot: { x: spot.x, y: spot.y }, startup: s, isYours: false });
-    else vacants.push({ x: spot.x, y: spot.y, open: false });
+    // vacant after seeding: a live claim may occupy it (first claim wins)
+    const c = claimBySpot.get(i);
+    if (c) {
+      booths.push({ ...base, startup: c.claim.startup, isYours: c.isYours, ownerId: c.ownerId });
+    } else {
+      booths.push({ ...base, startup: null, isYours: false });
+    }
   });
 
   for (const b of booths) {
-    drawables.push(bannerDrawable(b), counterDrawable(b));
-  }
-  for (const v of vacants) {
-    drawables.push(vacantBannerDrawable(v), vacantCounterDrawable(v));
+    if (b.startup) {
+      const occupied = { ...b, startup: b.startup };
+      drawables.push(bannerDrawable(occupied), counterDrawable(occupied));
+    } else {
+      drawables.push(vacantBannerDrawable(b.spot), vacantCounterDrawable(b.spot));
+    }
   }
 
   // ----- ambient props, seeded from floor.id -----
@@ -236,8 +250,10 @@ export function buildFloor(
       }
     }
     // carpets: booth zone + 1-tile apron row below (4 x 4 tiles)
-    for (const b of booths) drawCarpet(ctx, b.spot.x, b.spot.y, b.startup.booth.carpet);
-    for (const v of vacants) drawCarpet(ctx, v.x, v.y, VACANT_FACE);
+    for (const b of booths) {
+      if (b.startup) drawCarpet(ctx, b.spot.x, b.spot.y, b.startup.booth.carpet, b.startup.booth.pattern);
+      else drawCarpet(ctx, b.spot.x, b.spot.y, VACANT_FACE);
+    }
     // mats
     for (const m of mats) {
       ctx.fillStyle = matFill;
@@ -261,19 +277,33 @@ export function buildFloor(
 
 // ---------- booth pieces ----------
 
-function drawCarpet(ctx: CanvasRenderingContext2D, sx: number, sy: number, color: string): void {
+function drawCarpet(
+  ctx: CanvasRenderingContext2D,
+  sx: number,
+  sy: number,
+  color: string,
+  pattern?: "solid" | "border" | "stripes"
+): void {
   const x = sx * T;
   const y = sy * T;
   const cw = 4 * T;
   const ch = 4 * T; // 3 booth rows + 1 apron row
   ctx.fillStyle = color;
   ctx.fillRect(x, y, cw, ch);
+  if (pattern === "stripes") {
+    ctx.fillStyle = shade(color, -0.08);
+    for (let i = 0; i < 4; i += 2) ctx.fillRect(x + i * T, y, T, ch);
+  } else if (pattern === "border") {
+    ctx.strokeStyle = shade(color, 0.14);
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x + 5.5, y + 5.5, cw - 11, ch - 11);
+  }
   ctx.strokeStyle = shade(color, -0.16);
   ctx.lineWidth = 2;
   ctx.strokeRect(x + 1, y + 1, cw - 2, ch - 2);
 }
 
-function bannerDrawable(b: BoothInstance): Drawable {
+function bannerDrawable(b: BoothInstance & { startup: Startup }): Drawable {
   const { x: sx, y: sy } = b.spot;
   const th = b.startup.booth;
   const bx = sx * T;
@@ -310,7 +340,7 @@ function bannerDrawable(b: BoothInstance): Drawable {
   };
 }
 
-function counterDrawable(b: BoothInstance): Drawable {
+function counterDrawable(b: BoothInstance & { startup: Startup }): Drawable {
   const { x: sx, y: sy } = b.spot;
   const bx = sx * T;
   const y0 = (sy + 2) * T;
@@ -365,7 +395,7 @@ function drawCounterBase(ctx: CanvasRenderingContext2D, bx: number, y0: number):
   ctx.fillRect(bx, y0 + 12, 4 * T, 2);
 }
 
-function vacantBannerDrawable(v: VacantSpot): Drawable {
+function vacantBannerDrawable(v: { x: number; y: number }): Drawable {
   const bx = v.x * T;
   const by = v.y * T;
   const dark = shade(VACANT_FACE, -0.35);
@@ -379,21 +409,16 @@ function vacantBannerDrawable(v: VacantSpot): Drawable {
       ctx.strokeStyle = dark;
       ctx.lineWidth = 2;
       ctx.strokeRect(bx + 4, by - 7, 4 * T - 8, T + 2);
-      if (v.open) {
-        ctx.fillStyle = INK;
-        ctx.font = "700 8px ui-monospace, SFMono-Regular, Menlo, monospace";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText("OPEN SPOT", bx + 2 * T, by + 9, 4 * T - 20);
-      } else {
-        ctx.fillStyle = shade(VACANT_FACE, -0.22);
-        ctx.fillRect(bx + 2 * T - 8, by + 8, 16, 2);
-      }
+      ctx.fillStyle = INK;
+      ctx.font = "700 8px ui-monospace, SFMono-Regular, Menlo, monospace";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("OPEN SPOT", bx + 2 * T, by + 9, 4 * T - 20);
     },
   };
 }
 
-function vacantCounterDrawable(v: VacantSpot): Drawable {
+function vacantCounterDrawable(v: { x: number; y: number }): Drawable {
   const bx = v.x * T;
   const y0 = (v.y + 2) * T;
   return {
