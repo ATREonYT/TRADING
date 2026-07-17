@@ -43,10 +43,21 @@ export interface StoreActions {
   setStatus(s: string): void;
   /** Attach a personal note to a connection by its ts key (trimmed, <= 200; empty clears). */
   setConnectionNote(ts: number, note: string): void;
-  /** Mark a first-session checklist step done. Appends once; unknown steps are ignored. */
+  /** Mark a tutorial step done. Appends once; unknown steps are ignored. */
   completeOnboarding(step: OnboardingStep): void;
   /** Award a badge id (<= 32 chars). Appends once; duplicates are ignored. */
   grantBadge(id: string): void;
+  /** Finish (or skip) the guided tour. */
+  setTutorialDone(done: boolean): void;
+  /** Quest deeds — each appends once / increments and is otherwise a no-op. */
+  recordTalkedTo(id: string): void;
+  recordSigned(key: string): void;
+  recordFloorVisit(floorId: string): void;
+  recordEmote(): void;
+  /** Mark a quest's reward as granted so it never re-fires. */
+  markQuestClaimed(id: string): void;
+  /** Pick an earned title (<= 24 chars; empty clears). Shown on your hover card. */
+  setTitle(t: string): void;
 }
 
 // ---------- defaults ----------
@@ -58,7 +69,10 @@ function defaultState(): AppState {
     connections: [],
     claims: {},
     onboarding: [],
+    tutorialDone: false,
     badges: [],
+    quest: { talkedTo: [], signed: [], floors: [], emotes: 0 },
+    claimedQuests: [],
   };
 }
 
@@ -185,6 +199,10 @@ function sanitize(raw: unknown): AppState {
       const status = pr.status.trim().slice(0, 40);
       if (status) base.profile.status = status;
     }
+    if (typeof pr.title === "string") {
+      const title = pr.title.trim().slice(0, 24);
+      if (title) base.profile.title = title;
+    }
   }
 
   if (r.sub === "free" || r.sub === "pro" || r.sub === "founder") {
@@ -251,6 +269,30 @@ function sanitize(raw: unknown): AppState {
     }
     base.badges = Array.from(ids);
   }
+
+  base.tutorialDone = r.tutorialDone === true;
+
+  const strList = (v: unknown, maxLen: number, cap: number): string[] => {
+    if (!Array.isArray(v)) return [];
+    const out = new Set<string>();
+    for (const x of v) {
+      if (typeof x === "string" && x && x.length <= maxLen) out.add(x);
+      if (out.size >= cap) break;
+    }
+    return Array.from(out);
+  };
+
+  if (r.quest && typeof r.quest === "object") {
+    const q = r.quest as Record<string, unknown>;
+    base.quest = {
+      talkedTo: strList(q.talkedTo, 64, 200),
+      signed: strList(q.signed, 64, 200),
+      floors: strList(q.floors, 64, 32),
+      emotes: Math.min(100_000, Math.max(0, Math.trunc(numOr(q.emotes, 0)))),
+    };
+  }
+
+  base.claimedQuests = strList(r.claimedQuests, 32, 50);
 
   return base;
 }
@@ -451,6 +493,56 @@ const ACTIONS: StoreActions = {
     if (state.badges.includes(badge)) return;
     if (state.badges.length >= 20) return; // matches the sanitize() cap
     setState({ ...state, badges: [...state.badges, badge] });
+  },
+
+  setTutorialDone(done: boolean): void {
+    ensureClientInit();
+    if (state.tutorialDone === done) return;
+    setState({ ...state, tutorialDone: done });
+  },
+
+  recordTalkedTo(id: string): void {
+    ensureClientInit();
+    const key = id.trim().slice(0, 64);
+    if (!key || state.quest.talkedTo.includes(key) || state.quest.talkedTo.length >= 200) return;
+    setState({ ...state, quest: { ...state.quest, talkedTo: [...state.quest.talkedTo, key] } });
+  },
+
+  recordSigned(key: string): void {
+    ensureClientInit();
+    const k = key.trim().slice(0, 64);
+    if (!k || state.quest.signed.includes(k) || state.quest.signed.length >= 200) return;
+    setState({ ...state, quest: { ...state.quest, signed: [...state.quest.signed, k] } });
+  },
+
+  recordFloorVisit(floorId: string): void {
+    ensureClientInit();
+    const f = floorId.trim().slice(0, 64);
+    if (!f || state.quest.floors.includes(f) || state.quest.floors.length >= 32) return;
+    setState({ ...state, quest: { ...state.quest, floors: [...state.quest.floors, f] } });
+  },
+
+  recordEmote(): void {
+    ensureClientInit();
+    if (state.quest.emotes >= 100_000) return;
+    setState({ ...state, quest: { ...state.quest, emotes: state.quest.emotes + 1 } });
+  },
+
+  markQuestClaimed(id: string): void {
+    ensureClientInit();
+    const q = id.trim().slice(0, 32);
+    if (!q || state.claimedQuests.includes(q) || state.claimedQuests.length >= 50) return;
+    setState({ ...state, claimedQuests: [...state.claimedQuests, q] });
+  },
+
+  setTitle(t: string): void {
+    ensureClientInit();
+    const title = t.trim().slice(0, 24);
+    if (title === (state.profile.title ?? "")) return;
+    const profile = { ...state.profile };
+    if (title) profile.title = title;
+    else delete profile.title;
+    setState({ ...state, profile });
   },
 };
 

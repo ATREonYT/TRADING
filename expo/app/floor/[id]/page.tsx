@@ -20,13 +20,14 @@ import type {
   NetClient,
   Startup,
 } from "@/lib/types";
+import { questStates, unlockedEmotes } from "@/lib/data/quests";
 import BoothCard from "@/components/BoothCard";
 import OpenStandCard from "@/components/OpenStandCard";
 import ChatPanel, { type ChatThread } from "@/components/ChatPanel";
 import EmoteBar from "@/components/EmoteBar";
 import HoverCard from "@/components/HoverCard";
-import ActivityTicker from "@/components/ActivityTicker";
-import OnboardingCard from "@/components/OnboardingCard";
+import TutorialCoach from "@/components/TutorialCoach";
+import QuestPanel from "@/components/QuestPanel";
 import EventPill from "@/components/EventPill";
 import Toast, { type ToastData } from "@/components/Toast";
 import TierTag, { TIER_LABEL } from "@/components/TierTag";
@@ -103,6 +104,9 @@ export default function FloorPage({ params }: { params: { id: string } }) {
   const [minimapOn, setMinimapOn] = useState(true);
   /** Session mute list (wire ids) — their chat, DMs, bubbles and emotes hide. */
   const [mutedIds, setMutedIds] = useState<ReadonlySet<string>>(new Set());
+  /** Chat starts folded on every screen; opening a DM unfolds it. */
+  const [chatCollapsed, setChatCollapsed] = useState(true);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   // ---- refs (stable across the game's lifetime) ----
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -198,6 +202,7 @@ export default function FloorPage({ params }: { params: { id: string } }) {
       };
     });
     setTab(key);
+    setChatCollapsed(false);
   }, []);
 
   const openPlayerThread = useCallback((wireId: string, name: string) => {
@@ -223,10 +228,12 @@ export default function FloorPage({ params }: { params: { id: string } }) {
       };
     });
     setTab(key);
+    setChatCollapsed(false);
   }, []);
 
   const handleTab = useCallback((key: string) => {
     setTab(key);
+    setChatCollapsed(false);
     if (key !== "floor") {
       setThreads((prev) =>
         prev[key] ? { ...prev, [key]: { ...prev[key], unread: false } } : prev,
@@ -441,6 +448,8 @@ export default function FloorPage({ params }: { params: { id: string } }) {
         };
       });
       actions.completeOnboarding("talk");
+      // Quest deed: distinct founders/players talked to.
+      actions.recordTalkedTo(th.kind === "player" ? (th.peerId ?? tabKey) : (th.startupId ?? tabKey));
 
       if (th.kind === "player") {
         // Local-append + filter the server echo (same policy as the floor tab).
@@ -493,6 +502,7 @@ export default function FloorPage({ params }: { params: { id: string } }) {
     (kind: EmoteKind) => {
       handleRef.current?.emote(kind);
       actions.completeOnboarding("emote");
+      actions.recordEmote();
     },
     [actions],
   );
@@ -504,17 +514,33 @@ export default function FloorPage({ params }: { params: { id: string } }) {
     showToast("Demo Night, live, and you're in the room. Badge earned.");
   }, [actions, showToast]);
 
-  // First-steps badge — fires once when the fourth step lands.
+  // Tour finishes itself when the last step lands.
+  useEffect(() => {
+    if (!ready || state.tutorialDone) return;
+    if (state.onboarding.length >= ONBOARDING_STEPS.length) {
+      actions.setTutorialDone(true);
+      showToast("Tour done. You look like a regular already.");
+    }
+  }, [ready, state.onboarding, state.tutorialDone, actions, showToast]);
+
+  // Quest deed: floors visited.
+  useEffect(() => {
+    if (ready && allowed && floor) actions.recordFloorVisit(floor.id);
+  }, [ready, allowed, floor, actions]);
+
+  // Quest rewards — grant each completed quest's badge/title/emote exactly once.
+  const quests = useMemo(() => questStates(state), [state]);
+  const emotes = useMemo(() => unlockedEmotes(state), [state]);
   useEffect(() => {
     if (!ready) return;
-    if (
-      state.onboarding.length >= ONBOARDING_STEPS.length &&
-      !state.badges.includes("first-steps")
-    ) {
-      actions.grantBadge("first-steps");
-      showToast("First steps done. You look like a regular already.");
+    for (const q of quests) {
+      if (!q.done || q.claimed) continue;
+      actions.markQuestClaimed(q.def.id);
+      actions.grantBadge(q.def.reward.badge);
+      showToast(`Quest complete: ${q.def.title} — ${q.def.rewardLabel}`);
+      break; // one toast per render pass; the next completes on the following pass
     }
-  }, [ready, state.onboarding, state.badges, actions, showToast]);
+  }, [ready, quests, actions, showToast]);
 
   // ---- mount the game + net client ----
   useEffect(() => {
@@ -647,7 +673,8 @@ export default function FloorPage({ params }: { params: { id: string } }) {
           if (!active) return;
           if (!b || b.spotIndex !== active.spotIndex) {
             // Walked away — the card and the NPC conversation close behind
-            // you. Closing hides the thread; its history survives.
+            // you. Closing hides the thread; its history survives. The chat
+            // panel folds back down so the floor stays the main thing.
             setActiveBooth(null);
             const s = active.startup;
             if (s && !active.isYours && !active.ownerId) {
@@ -655,7 +682,13 @@ export default function FloorPage({ params }: { params: { id: string } }) {
               setThreads((prev) =>
                 prev[key]?.open ? { ...prev, [key]: { ...prev[key], open: false } } : prev,
               );
-              setTab((t) => (t === key ? "floor" : t));
+              setTab((t) => {
+                if (t === key) {
+                  setChatCollapsed(true);
+                  return "floor";
+                }
+                return t;
+              });
             }
           } else {
             // Same stand, fresh instance (the floor was rebuilt) — keep the
@@ -665,6 +698,7 @@ export default function FloorPage({ params }: { params: { id: string } }) {
         },
         onInteract: (b) => {
           setActiveBooth(b);
+          actions.completeOnboarding("interact");
           // DM opens only for seed-startup booths: their founder is an NPC.
           // Live-claimed stands have a real owner walking the floor, and your
           // own booth has you.
@@ -796,8 +830,6 @@ export default function FloorPage({ params }: { params: { id: string } }) {
     ...(netRef.current ? [netRef.current.selfId] : []),
   ];
 
-  const showOnboarding = state.onboarding.length < ONBOARDING_STEPS.length;
-
   // Guestbook key: startup id for seed booths, "spot:<i>" for claimed stands.
   const guestbookKey =
     activeBooth && activeBooth.startup
@@ -844,18 +876,11 @@ export default function FloorPage({ params }: { params: { id: string } }) {
         </div>
       </div>
 
-      {/* activity ticker — one muted line, center, under the top bar
-          (the top bar wraps to two rows on narrow screens, so sit lower there) */}
-      <div className="pointer-events-none absolute inset-x-3 top-24 flex justify-center sm:top-16">
-        <ActivityTicker items={activity} />
+      {/* quest tracker — the single "what should I do?" surface (the ticker
+          now lives in the chat panel's header, and the tour is its own card) */}
+      <div className="pointer-events-none absolute left-3 top-24 sm:top-16">
+        <QuestPanel quests={quests} />
       </div>
-
-      {/* first-session checklist */}
-      {showOnboarding && (
-        <div className="pointer-events-none absolute left-3 top-36 sm:top-16">
-          <OnboardingCard done={state.onboarding} />
-        </div>
-      )}
 
       {/* interact hint */}
       {nearBooth && !activeBooth && (
@@ -923,6 +948,7 @@ export default function FloorPage({ params }: { params: { id: string } }) {
                       floorId: floor.id,
                       boothKey: guestbookKey,
                       onFocusChange: handleFocusChange,
+                      onSigned: actions.recordSigned,
                     }
                   : undefined
               }
@@ -939,7 +965,18 @@ export default function FloorPage({ params }: { params: { id: string } }) {
         </div>
       )}
 
-      {/* bottom HUD: chat (left), emotes (center), controls hint (right) */}
+      {/* tutorial coach — one instruction at a time, above the bottom HUD */}
+      {!state.tutorialDone && (
+        <div className="pointer-events-none absolute bottom-20 left-1/2 flex -translate-x-1/2 justify-center">
+          <TutorialCoach
+            done={state.onboarding}
+            coarse={coarse}
+            onSkip={() => actions.setTutorialDone(true)}
+          />
+        </div>
+      )}
+
+      {/* bottom HUD: chat (left), emotes (center), help (right) */}
       <div className="pointer-events-none absolute inset-x-3 bottom-3 flex flex-col items-center gap-2 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:items-end">
         <div className="order-3 flex w-full justify-start sm:order-none sm:w-auto">
           <ChatPanel
@@ -954,10 +991,13 @@ export default function FloorPage({ params }: { params: { id: string } }) {
             onClose={closeThread}
             onToggleMute={toggleMute}
             onReport={reportPeer}
+            collapsed={chatCollapsed}
+            onCollapsedChange={setChatCollapsed}
+            ticker={activity.length ? activity[activity.length - 1].text : undefined}
           />
         </div>
         <div className="order-2 flex items-stretch gap-2 sm:order-none">
-          <EmoteBar onEmote={handleEmote} />
+          <EmoteBar onEmote={handleEmote} unlocked={emotes} />
           {coarse && (
             <button
               type="button"
@@ -976,11 +1016,34 @@ export default function FloorPage({ params }: { params: { id: string } }) {
           )}
         </div>
         <div className="order-1 flex sm:order-none sm:justify-end">
-          <span className="panel px-3 py-1.5 text-xs text-muted shadow-card">
-            {coarse
-              ? "tap to walk · tap a booth to talk"
-              : "WASD / arrows to walk · E to talk · M for map"}
-          </span>
+          <div className="relative">
+            {helpOpen && (
+              <div className="panel pointer-events-auto absolute bottom-10 right-0 w-56 p-3 text-xs leading-relaxed text-muted shadow-card">
+                <p className="micro mb-1.5 text-ink">Controls</p>
+                {coarse ? (
+                  <p>Tap to walk. Tap a booth to talk. Buttons below to react.</p>
+                ) : (
+                  <>
+                    <p>WASD / arrows or click — walk</p>
+                    <p>E — talk to the booth you&rsquo;re near</p>
+                    <p>1–8 — reactions · M — minimap</p>
+                  </>
+                )}
+                <p className="mt-1.5 border-t border-line pt-1.5">
+                  Quests live top-left. Finish them for reactions and titles.
+                </p>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setHelpOpen((v) => !v)}
+              aria-expanded={helpOpen}
+              aria-label="Help"
+              className="panel pointer-events-auto h-9 w-9 text-sm text-muted shadow-card hover:text-ink"
+            >
+              ?
+            </button>
+          </div>
         </div>
       </div>
 

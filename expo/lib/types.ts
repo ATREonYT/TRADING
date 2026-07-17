@@ -28,16 +28,31 @@ export interface PlayerProfile {
   look: AvatarLook;
   /** Short status line shown under the name label, e.g. "raising seed". <= 40 chars. */
   status?: string;
+  /** Earned quest title shown on the hover card, e.g. "Connector". <= 24 chars. */
+  title?: string;
 }
 
-/** One-key reactions, rendered as a pop bubble above the avatar. */
-export type EmoteKind = "wave" | "laugh" | "clap" | "heart" | "question";
+/** One-key reactions, rendered as a pop bubble above the avatar.
+ * The first five are always available; the last three are quest rewards
+ * (see lib/data/quests.ts). */
+export type EmoteKind =
+  | "wave"
+  | "laugh"
+  | "clap"
+  | "heart"
+  | "question"
+  | "rocket"
+  | "fire"
+  | "handshake";
 export const EMOTES: { kind: EmoteKind; char: string; label: string; key: string }[] = [
   { kind: "wave", char: "👋", label: "Wave", key: "1" },
   { kind: "laugh", char: "😂", label: "Laugh", key: "2" },
   { kind: "clap", char: "👏", label: "Clap", key: "3" },
   { kind: "heart", char: "❤️", label: "Heart", key: "4" },
   { kind: "question", char: "❓", label: "Question", key: "5" },
+  { kind: "rocket", char: "🚀", label: "Rocket", key: "6" },
+  { kind: "fire", char: "🔥", label: "Fire", key: "7" },
+  { kind: "handshake", char: "🤝", label: "Handshake", key: "8" },
 ];
 
 // ---------- ranks ----------
@@ -172,6 +187,7 @@ export interface RemotePlayer {
   look: AvatarLook;
   s: MoveState;
   status?: string;
+  title?: string;
 }
 
 /** A guestbook entry left at a booth. */
@@ -266,7 +282,7 @@ export interface NetClient {
 
 /** What the pointer is over, for the hover card. Screen coords are CSS px in the canvas. */
 export type HoverTarget =
-  | { kind: "player"; id: string; name: string; status?: string; x: number; y: number }
+  | { kind: "player"; id: string; name: string; status?: string; title?: string; x: number; y: number }
   | { kind: "npc"; startupId: string; name: string; x: number; y: number }
   | { kind: "booth"; booth: BoothInstance; x: number; y: number };
 
@@ -352,9 +368,21 @@ export interface Connection {
   note?: string;
 }
 
-/** First-session checklist steps. */
-export type OnboardingStep = "move" | "talk" | "emote" | "connect";
-export const ONBOARDING_STEPS: OnboardingStep[] = ["move", "talk", "emote", "connect"];
+/** Tutorial steps, in teaching order (the guided tour advances through them). */
+export type OnboardingStep = "move" | "interact" | "talk" | "emote" | "connect";
+export const ONBOARDING_STEPS: OnboardingStep[] = ["move", "interact", "talk", "emote", "connect"];
+
+/** Deed counters/sets that quests read (see lib/data/quests.ts). */
+export interface QuestProgress {
+  /** Distinct founders/players DM'd (startup ids and peer ids). */
+  talkedTo: string[];
+  /** Distinct guestbook keys signed. */
+  signed: string[];
+  /** Distinct floors entered. */
+  floors: string[];
+  /** Total reactions sent. */
+  emotes: number;
+}
 
 export interface AppState {
   profile: PlayerProfile;
@@ -363,10 +391,16 @@ export interface AppState {
   myStartup?: Startup;
   /** Claimed stand per floor: floorId -> boothSpots index. */
   claims: Record<string, number>;
-  /** Completed first-session steps. */
+  /** Completed tutorial steps. */
   onboarding: OnboardingStep[];
+  /** True once the guided tour was finished or skipped. */
+  tutorialDone: boolean;
   /** Earned badge ids (e.g. "first-steps", "demo-night"). */
   badges: string[];
+  /** Quest deed tracking. */
+  quest: QuestProgress;
+  /** Quest ids whose rewards were already granted (so toasts fire once). */
+  claimedQuests: string[];
 }
 
 export const TILE = 32; // px per tile — single source of truth

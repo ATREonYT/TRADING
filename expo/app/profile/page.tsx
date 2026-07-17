@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useAppState } from "@/lib/store";
 import { RANKS, rankFor } from "@/lib/ranks";
 import { FLOORS } from "@/lib/data/floors";
+import { earnedTitles, questStates } from "@/lib/data/quests";
 import {
   TIER_ORDER,
   type CarpetPattern,
@@ -55,6 +56,36 @@ const BADGE_META: Record<string, { name: string; blurb: string; glyph: GlyphId }
     name: "Demo Night",
     blurb: "In the hall while it was live.",
     glyph: "bolt",
+  },
+  rounds: {
+    name: "Making Rounds",
+    blurb: "Talked to three different founders.",
+    glyph: "rocket",
+  },
+  connector: {
+    name: "Connector",
+    blurb: "Three connections and counting.",
+    glyph: "heart",
+  },
+  mark: {
+    name: "Left a Mark",
+    blurb: "Signed two guestbooks.",
+    glyph: "flask",
+  },
+  exhibitor: {
+    name: "Exhibitor",
+    blurb: "Put a stand on the floor.",
+    glyph: "cube",
+  },
+  tourist: {
+    name: "Tourist",
+    blurb: "Two floors, one pair of shoes.",
+    glyph: "wave",
+  },
+  "crowd-pleaser": {
+    name: "Crowd Pleaser",
+    blurb: "Ten reactions deep.",
+    glyph: "coin",
   },
 };
 
@@ -254,6 +285,8 @@ export default function ProfilePage() {
   }
 
   const verifiedRevenue = state.myStartup?.verifiedRevenue ?? 0;
+  const questList = questStates(state);
+  const earnedTitleList = earnedTitles(state);
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-12">
@@ -293,10 +326,81 @@ export default function ProfilePage() {
             />
           </div>
           <div>
+            <span className="micro mb-1.5 block text-muted">
+              Title — earned through quests, shows on your hover card
+            </span>
+            {earnedTitleList.length === 0 ? (
+              <p className="text-sm text-muted">
+                None earned yet. The quest list on any floor knows the way.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => actions.setTitle("")}
+                  aria-pressed={!state.profile.title}
+                  className={`micro rounded-sm border px-2 py-1 ${
+                    !state.profile.title
+                      ? "border-ink text-ink"
+                      : "border-line text-muted hover:border-muted"
+                  }`}
+                >
+                  none
+                </button>
+                {earnedTitleList.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => actions.setTitle(t)}
+                    aria-pressed={state.profile.title === t}
+                    className={`micro rounded-sm border px-2 py-1 ${
+                      state.profile.title === t
+                        ? "border-gold text-gold ring-1 ring-gold/40"
+                        : "border-line text-muted hover:border-muted"
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div>
             <span className="micro mb-2 block text-muted">Look</span>
             <AvatarPicker look={state.profile.look} onChange={actions.setLook} />
           </div>
         </div>
+      </SectionCard>
+
+      {/* ---- Quests ---- */}
+      <SectionCard title="Quests">
+        <ul className="divide-y divide-line">
+          {questList.map((q) => (
+            <li key={q.def.id} className="flex items-center gap-3 py-2.5">
+              <span
+                aria-hidden="true"
+                className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                  q.done ? "bg-verify" : "bg-line"
+                }`}
+              />
+              <div className="min-w-0 flex-1">
+                <p className={`text-sm ${q.done ? "text-muted line-through" : "text-ink"}`}>
+                  {q.def.title}
+                  <span className="ml-2 text-xs text-muted no-underline">
+                    {q.def.blurb}
+                  </span>
+                </p>
+                <p className={`text-xs ${q.done ? "text-verify" : "text-muted"}`}>
+                  {q.done ? "✓ " : "reward: "}
+                  {q.def.rewardLabel}
+                </p>
+              </div>
+              <span className="micro shrink-0 text-muted">
+                {q.count}/{q.def.goal}
+              </span>
+            </li>
+          ))}
+        </ul>
       </SectionCard>
 
       {/* ---- My booth ---- */}

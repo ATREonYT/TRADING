@@ -25,6 +25,7 @@ interface BoothCardProps {
     floorId: string;
     boothKey: string;
     onFocusChange?: (focused: boolean) => void;
+    onSigned?: (key: string) => void;
   };
 }
 
@@ -118,6 +119,7 @@ export default function BoothCard({
             boothKey={guestbook.boothKey}
             boothName={s.name}
             onFocusChange={guestbook.onFocusChange}
+            onSigned={guestbook.onSigned}
           />
         )}
 

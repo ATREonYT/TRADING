@@ -76,7 +76,11 @@ const HEARTBEAT_MS = 30_000;
 const OPEN = 1; // WebSocket.OPEN
 
 const DIRS = new Set(["up", "down", "left", "right"]);
-const EMOTE_KINDS = new Set(["wave", "laugh", "clap", "heart", "question"]);
+const EMOTE_KINDS = new Set([
+  "wave", "laugh", "clap", "heart", "question",
+  // quest-reward emotes (unlocks are client-side; the wire accepts all eight)
+  "rocket", "fire", "handshake",
+]);
 
 const DATA_FILE = join(dirname(fileURLToPath(import.meta.url)), "floor-data.json");
 
@@ -256,7 +260,8 @@ function flushAndExit() {
 process.on("SIGINT", flushAndExit);
 process.on("SIGTERM", flushAndExit);
 
-loadData();
+// NOTE: loadData() is called below the sanitizer section — sanitizeClaim()
+// reads consts (MAX_SPOT_INDEX, GLYPHS, ...) that must be initialized first.
 
 // ---------- sanitizers ----------
 
@@ -402,6 +407,8 @@ function pruneStands() {
 }
 setInterval(pruneStands, 60 * 60 * 1000).unref();
 
+loadData();
+
 // ---------- wire helpers ----------
 
 function send(ws, ev) {
@@ -424,6 +431,7 @@ function asRemotePlayer(client) {
     s: client.s,
     // JSON.stringify drops the key when undefined — absent status stays absent.
     status: client.status || undefined,
+    title: client.title || undefined,
   };
 }
 
@@ -559,6 +567,7 @@ wss.on("connection", (ws, req) => {
     const name = sanitizeName(p?.name);
     const look = sanitizeLook(p?.look);
     const status = sanitizeStr(p?.status, MAX_STATUS_LEN);
+    const title = sanitizeStr(p?.title, 24);
     const s = sanitizeMove(msg.s);
 
     room = rooms.get(floorId);
@@ -572,7 +581,7 @@ wss.on("connection", (ws, req) => {
     let id = rawId;
     for (let n = 2; room.has(id); n++) id = `${rawId}-${n}`;
 
-    client = { ws, id, rawId, name, look, s, status, claim: null };
+    client = { ws, id, rawId, name, look, s, status, title, claim: null };
     room.set(id, client);
 
     const others = [...room.values()].filter((c) => c.id !== id).map(asRemotePlayer);

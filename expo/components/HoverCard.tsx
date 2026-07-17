@@ -48,7 +48,14 @@ export default function HoverCard({
   if (target.kind === "player") {
     body = (
       <>
-        <p className="text-sm leading-tight text-ink">{target.name}</p>
+        <div className="flex items-baseline gap-2">
+          <p className="text-sm leading-tight text-ink">{target.name}</p>
+          {target.title && (
+            <span className="micro rounded-sm border border-gold/50 px-1 py-px text-gold">
+              {target.title}
+            </span>
+          )}
+        </div>
         {target.status && (
           <p className="mt-0.5 text-xs leading-snug text-muted">{target.status}</p>
         )}

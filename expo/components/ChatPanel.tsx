@@ -46,6 +46,11 @@ interface ChatPanelProps {
   onToggleMute?: (key: string) => void;
   /** Player threads only: report this peer to the operator. */
   onReport?: (key: string) => void;
+  /** Collapse state is owned by the page (so opening a DM can expand it). */
+  collapsed: boolean;
+  onCollapsedChange: (v: boolean) => void;
+  /** Latest activity-ticker line, shown in the panel header. */
+  ticker?: string;
 }
 
 function MessageRow({ msg, mine }: { msg: ChatMsg; mine: boolean }) {
@@ -75,12 +80,11 @@ export default function ChatPanel({
   onClose,
   onToggleMute,
   onReport,
+  collapsed,
+  onCollapsedChange,
+  ticker,
 }: ChatPanelProps) {
   const [text, setText] = useState("");
-  // Small screens start collapsed so the floor stays visible.
-  const [collapsed, setCollapsed] = useState<boolean>(
-    () => typeof window !== "undefined" && window.innerWidth < 640,
-  );
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -112,12 +116,17 @@ export default function ChatPanel({
       >
         <button
           type="button"
-          onClick={() => setCollapsed(false)}
-          className="flex h-11 w-full items-center justify-between px-3"
+          onClick={() => onCollapsedChange(false)}
+          className="flex h-11 w-full items-center justify-between gap-2 px-3"
           aria-expanded={false}
         >
-          <span className="micro text-muted">Chat</span>
-          <span className="flex items-center gap-2">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="micro shrink-0 text-muted">Chat</span>
+            {ticker && (
+              <span className="truncate text-xs text-muted/80">{ticker}</span>
+            )}
+          </span>
+          <span className="flex shrink-0 items-center gap-2">
             {anyUnread && (
               <span
                 aria-label="Unread messages"
@@ -191,9 +200,9 @@ export default function ChatPanel({
         </div>
         <button
           type="button"
-          onClick={() => setCollapsed(true)}
+          onClick={() => onCollapsedChange(true)}
           aria-label="Collapse chat"
-          className="shrink-0 border-l border-line px-3 text-xs text-muted hover:text-ink sm:hidden"
+          className="shrink-0 border-l border-line px-3 text-xs text-muted hover:text-ink"
         >
           hide
         </button>

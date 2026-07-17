@@ -51,6 +51,8 @@ interface GuestbookProps {
   boothName?: string;
   /** Wire game input on/off while typing. */
   onFocusChange?: (focused: boolean) => void;
+  /** Fired after a successful sign (quest tracking). */
+  onSigned?: (key: string) => void;
 }
 
 export default function Guestbook({
@@ -59,6 +61,7 @@ export default function Guestbook({
   boothKey,
   boothName,
   onFocusChange,
+  onSigned,
 }: GuestbookProps) {
   const [entries, setEntries] = useState<GuestbookEntry[]>([]);
   const [text, setText] = useState("");
@@ -107,6 +110,7 @@ export default function Guestbook({
     if (!t || !net?.online) return;
     // The server broadcasts the entry back (echo) — no local append.
     net.sendSign(boothKey, t, boothName);
+    onSigned?.(boothKey);
     setText("");
   };
 

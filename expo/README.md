@@ -33,9 +33,26 @@ badge and NPC founders only.
   the only way to get around, and it's fine)
 - **E or Enter** — talk to the booth you're near (a `!` bubble and an "E — talk
   to" hint appear); clicking a nearby booth works too
-- **1–5** — reactions (wave, laugh, clap, heart, question); they pop as a
-  bubble over your head for everyone on the floor. The bar at the bottom does
-  the same thing with a mouse or a thumb
+- **1–8** — reactions; they pop as a bubble over your head for everyone on the
+  floor. The bar at the bottom does the same thing with a mouse or a thumb.
+  1–5 (wave, laugh, clap, heart, question) are always available; 6–8
+  (🚀, 🔥, 🤝) are quest rewards
+- **?** (bottom right) — controls reference; the floor stays quiet otherwise:
+  chat starts folded into a one-line bar (with the activity ticker in its
+  header) and only unfolds when a conversation opens
+
+## Tutorial, quests and rewards
+
+First visit gets a five-step guided tour (walk → find a booth → talk → react →
+connect), one instruction at a time, skippable. After that the quest tracker
+(top left) is the "what should I do?" surface: seven quests — talk to three
+founders, make three connections, sign two guestbooks, claim a stand, visit
+two floors, send ten reactions — each rewarding a badge, and some unlocking
+the three bonus reactions or an earnable **title** ("Connector", "Exhibitor",
+"Socialite") you can pick in Profile; titles show on your hover card so other
+players see them. Progress lives in localStorage with everything else, and
+none of it gates the social basics — chat, connecting and claiming stay free
+for everyone.
 - **M** — toggle the minimap (bottom right; on by default when the hall is
   bigger than your screen)
 - **Hover** a booth, founder, or player for a card with the one-liner, rank,

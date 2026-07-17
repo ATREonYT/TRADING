@@ -54,6 +54,7 @@ const EMOTE_CHARS: Record<EmoteKind, string> = EMOTES.reduce((acc, e) => {
 interface Remote {
   name: string;
   status?: string;
+  title?: string;
   frames: AvatarFrames;
   x: number;
   y: number;
@@ -235,6 +236,7 @@ export function createGame(opts: GameOptions): GameHandle {
     remotes.set(p.id, {
       name: p.name,
       status: p.status,
+      title: p.title,
       frames: bank.makeAvatar(p.look),
       x: p.s.x,
       y: p.s.y,
@@ -493,6 +495,7 @@ export function createGame(opts: GameOptions): GameHandle {
           id,
           name: r.name,
           status: r.status,
+          title: r.title,
           x: (r.x - cam.x) * ZOOM,
           y: (r.y - SPRITE_H - cam.y) * ZOOM,
         };
