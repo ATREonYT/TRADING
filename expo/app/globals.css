@@ -38,6 +38,34 @@
   .panel {
     @apply rounded-md border border-line bg-panel;
   }
+
+  /* Purposeful microinteractions (research-backed: feedback, not decoration).
+     Buttons press down a hair; cards lift a hair on hover. Both respect
+     prefers-reduced-motion. */
+  .btn-press {
+    transition: transform 90ms ease, background-color 120ms ease, border-color 120ms ease;
+  }
+  .btn-press:active:not(:disabled) {
+    transform: translateY(1px) scale(0.99);
+  }
+
+  .card-lift {
+    transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+  }
+  .card-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 2px 4px rgba(35, 32, 26, 0.06), 0 8px 20px rgba(35, 32, 26, 0.08);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .btn-press,
+    .btn-press:active:not(:disabled),
+    .card-lift,
+    .card-lift:hover {
+      transition: none;
+      transform: none;
+    }
+  }
 }
 
 @layer utilities {

@@ -106,6 +106,22 @@ guestbook notes, which is the whole point of an expo stand. It comes back
 online the moment you return, and expires after 7 days without a visit.
 Packing up (or taking down your startup in Profile) removes it everywhere.
 
+## Connections (mutual) and off-floor chat
+
+Connecting with a real person is a **request**, not a click: they see your
+calling card — name, title, status, badges, connection count, your startup and
+its rank, floors visited — and accept or decline (on the floor as a popup if
+they're online, otherwise in their inbox). Two people who request each other
+auto-connect. Accepted connections live server-side and appear on
+**/connections**, where chat keeps working even when neither of you is on a
+floor (HTTP polling against the floor server; messages persist in
+floor-data.json). The nav link carries an unread dot. NPC founders still
+connect instantly — they're exhibits, not people. No auth in this demo:
+profile ids are client-claimed, so treat the social graph as a courtesy layer
+until real accounts land.
+
+New endpoints: `GET /social?me=ID`, `POST /social/request|respond|dm`.
+
 ## Moderation
 
 In any player DM thread: **Mute** hides that person's floor chat, DMs, bubbles

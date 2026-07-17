@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
 import PixelLogo from "@/components/PixelLogo";
+import NavConnections from "@/components/NavConnections";
 
 export const metadata: Metadata = {
   title: "FounderFloor — a walkable expo for startups",
@@ -42,6 +43,7 @@ export default function RootLayout({
               >
                 Directory
               </Link>
+              <NavConnections />
               <Link
                 href="/profile"
                 className="text-sm text-muted hover:text-ink hover:underline"

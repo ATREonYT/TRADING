@@ -131,6 +131,34 @@ export function buildFloor(
     });
   }
 
+  // ----- posters along the top wall: cheap set dressing so the hall reads
+  // as a real expo, not an empty corridor. Deterministic per floor. -----
+  const posterRng = mulberry32(hashStr(floor.id) ^ 0x51ab);
+  const POSTER_FACES = ["#C4562B", "#4E6E4E", "#3B5B92", "#A98C5B", "#6B4E71", "#2F6F6A"];
+  for (let px = 2; px < w - 3; px += 5 + Math.floor(posterRng() * 3)) {
+    if (posterRng() < 0.25) continue; // gaps keep it casual
+    const face = POSTER_FACES[Math.floor(posterRng() * POSTER_FACES.length)]!;
+    const tall = posterRng() > 0.5;
+    const x0 = px * T + 6 + Math.floor(posterRng() * 8);
+    drawables.push({
+      sortY: 1 * T, // same layer as the top wall
+      draw(ctx) {
+        const ph = tall ? 22 : 18;
+        ctx.fillStyle = shade(face, -0.35);
+        ctx.fillRect(x0 - 1, 7, 20, ph);
+        ctx.fillStyle = face;
+        ctx.fillRect(x0, 8, 18, ph - 2);
+        // headline block + text lines, abstract on purpose
+        ctx.fillStyle = "#FFFDF5";
+        ctx.fillRect(x0 + 3, 11, 12, 3);
+        ctx.fillStyle = shade(face, 0.35);
+        ctx.fillRect(x0 + 3, 17, 10, 1);
+        ctx.fillRect(x0 + 3, 20, 12, 1);
+        if (tall) ctx.fillRect(x0 + 3, 23, 8, 1);
+      },
+    });
+  }
+
   // ----- booth assignment: seed startups first, then live claims on leftovers -----
   const claimBySpot = new Map<number, ClaimEntry>();
   for (const c of claims) claimBySpot.set(c.claim.spotIndex, c);
@@ -221,7 +249,7 @@ export function buildFloor(
     mark(cart.x + 1, cart.y);
     drawables.push(cartDrawable(cart.x, cart.y));
   }
-  const benchCount = Math.max(1, Math.min(3, Math.floor(area / 260)));
+  const benchCount = Math.max(1, Math.min(4, Math.floor(area / 200)));
   for (let i = 0; i < benchCount; i++) {
     const p = tryPlace(2, 40);
     if (!p) break;
@@ -229,14 +257,14 @@ export function buildFloor(
     mark(p.x + 1, p.y);
     drawables.push(benchDrawable(p.x, p.y));
   }
-  const plantCount = Math.max(2, Math.min(8, Math.floor(area / 110)));
+  const plantCount = Math.max(3, Math.min(10, Math.floor(area / 90)));
   for (let i = 0; i < plantCount; i++) {
     const p = tryPlace(1, 40);
     if (!p) break;
     mark(p.x, p.y);
     drawables.push(plantDrawable(p.x, p.y, rng()));
   }
-  const matCount = Math.max(1, Math.min(4, Math.floor(area / 240)));
+  const matCount = Math.max(2, Math.min(5, Math.floor(area / 200)));
   for (let i = 0; i < matCount; i++) {
     const p = tryPlace(2, 40);
     if (!p) break;

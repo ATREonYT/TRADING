@@ -146,7 +146,7 @@ export default function LandingPage() {
               return (
                 <article
                   key={floor.id}
-                  className={`panel flex flex-col gap-4 p-5 sm:flex-row sm:gap-5 ${
+                  className={`panel card-lift flex flex-col gap-4 p-5 sm:flex-row sm:gap-5 ${
                     locked ? "bg-paper/50" : ""
                   }`}
                 >
@@ -268,7 +268,7 @@ export default function LandingPage() {
               return (
                 <article
                   key={tier}
-                  className={`panel flex flex-col p-5 ${
+                  className={`panel card-lift flex flex-col p-5 ${
                     tier === "pro" ? "border-accent/40" : ""
                   }`}
                 >

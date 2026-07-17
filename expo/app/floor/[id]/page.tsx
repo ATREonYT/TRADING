@@ -14,6 +14,7 @@ import type {
   BoothClaim,
   BoothInstance,
   ChatMsg,
+  ConnectRequest,
   EmoteKind,
   GameHandle,
   HoverTarget,
@@ -21,6 +22,8 @@ import type {
   Startup,
 } from "@/lib/types";
 import { questStates, unlockedEmotes } from "@/lib/data/quests";
+import { buildCard, respondToRequest, sendConnectRequest, useInbox } from "@/lib/social";
+import RequestCard from "@/components/RequestCard";
 import BoothCard from "@/components/BoothCard";
 import OpenStandCard from "@/components/OpenStandCard";
 import ChatPanel, { type ChatThread } from "@/components/ChatPanel";
@@ -107,6 +110,8 @@ export default function FloorPage({ params }: { params: { id: string } }) {
   /** Chat starts folded on every screen; opening a DM unfolds it. */
   const [chatCollapsed, setChatCollapsed] = useState(true);
   const [helpOpen, setHelpOpen] = useState(false);
+  /** Incoming connection request shown as a popup card (newest wins). */
+  const [incomingReq, setIncomingReq] = useState<ConnectRequest | null>(null);
 
   // ---- refs (stable across the game's lifetime) ----
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -143,6 +148,18 @@ export default function FloorPage({ params }: { params: { id: string } }) {
   mutedRef.current = mutedIds;
   const badgesRef = useRef(state.badges);
   badgesRef.current = state.badges;
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  // social inbox: request/connection state for booth cards and DM threads
+  const [inbox, refreshInbox] = useInbox(ready ? state.profile.id : "", 15_000);
+  /** Wire ids carry a "-2" suffix for second tabs; match them to profile ids. */
+  const matchesPeer = useCallback(
+    (profileId: string, wireOrProfileId: string | undefined): boolean =>
+      wireOrProfileId !== undefined &&
+      (wireOrProfileId === profileId || wireOrProfileId.startsWith(`${profileId}-`)),
+    [],
+  );
 
   const nameSet = state.profile.name !== "";
   const tierOk = floor ? TIER_ORDER[state.sub] >= TIER_ORDER[floor.tier] : false;
@@ -284,18 +301,14 @@ export default function FloorPage({ params }: { params: { id: string } }) {
     (s: Startup, ownerId?: string) => {
       if (!floor) return;
       if (ownerId) {
-        // A live player's claimed stand: key the connection by the person
-        // (their wire id), never by startup id — every client's own startup
-        // shares the same local id, so ids collide across people.
-        if (connectionsRef.current.some((c) => c.peerId === ownerId)) return;
-        actions.addConnection({
-          name: s.name,
-          founder: s.founder,
-          floorId: floor.id,
-          peerId: ownerId,
+        // A real person's stand: connecting is a REQUEST — they see your
+        // card (name, title, badges, track record) and accept or decline.
+        // ownerId is their stable profile id; the server routes it.
+        void sendConnectRequest(buildCard(stateRef.current), ownerId).then((ok) => {
+          if (ok) refreshInbox();
         });
         actions.completeOnboarding("connect");
-        showToast(`Connected with ${s.founder} of ${s.name}.`);
+        showToast(`Request sent to ${s.founder}. They'll see your card.`);
         return;
       }
       if (connectedIdsRef.current.has(s.id)) return;
@@ -362,16 +375,14 @@ export default function FloorPage({ params }: { params: { id: string } }) {
         if (s) handleConnect(s);
         return;
       }
-      // Dedupe on the peer's wire id — display names collide between people.
-      const already = connectionsRef.current.some((c) =>
-        th.peerId
-          ? c.peerId === th.peerId
-          : c.startupId === undefined && c.peerId === undefined && c.name === th.label,
-      );
-      if (already) return;
-      actions.addConnection({ name: th.label, floorId: floor.id, peerId: th.peerId });
+      // A real player: send a connection request. Their wire id is fine —
+      // the server resolves live wire ids to profile ids.
+      if (!th.peerId) return;
+      void sendConnectRequest(buildCard(stateRef.current), th.peerId).then((ok) => {
+        if (ok) refreshInbox();
+      });
       actions.completeOnboarding("connect");
-      showToast(`Connected with ${th.label}.`);
+      showToast(`Request sent to ${th.label}. They'll see your card.`);
     },
     [floor, actions, handleConnect, showToast],
   );
@@ -632,6 +643,15 @@ export default function FloorPage({ params }: { params: { id: string } }) {
           };
         });
       }
+      if (ev.t === "connect_request") {
+        // Someone wants to connect — show their card right here on the floor.
+        setIncomingReq(ev.req);
+        refreshInbox();
+      }
+      if (ev.t === "connect_accept") {
+        showToast(`${ev.peerName} accepted — you're connected. Chat lives in Connections.`);
+        refreshInbox();
+      }
       if (ev.t === "booth_denied") {
         // Someone else claimed that spot first. If this was a MOVE, the
         // server still holds our previous spot — restore it locally and
@@ -734,7 +754,7 @@ export default function FloorPage({ params }: { params: { id: string } }) {
       for (const t of Object.values(replyTimers.current)) clearTimeout(t);
       replyTimers.current = {};
     };
-  }, [allowed, params.id, actions, showToast, openNpcThread, openPlayerThread]);
+  }, [allowed, params.id, actions, showToast, openNpcThread, openPlayerThread, refreshInbox]);
 
   useEffect(() => {
     return () => {
@@ -818,11 +838,9 @@ export default function FloorPage({ params }: { params: { id: string } }) {
       connected:
         t.kind === "npc"
           ? t.startupId !== undefined && connectedIds.has(t.startupId)
-          : state.connections.some((c) =>
-              t.peerId
-                ? c.peerId === t.peerId
-                : c.startupId === undefined && c.peerId === undefined && c.name === t.label,
-            ),
+          : // Mutual (server-side) connections; wire ids may carry a tab suffix.
+            inbox.connections.some((c) => matchesPeer(c.peerId, t.peerId)) ||
+            inbox.outgoing.some((p) => matchesPeer(p, t.peerId)),
     }));
 
   const myIds = [
@@ -882,6 +900,32 @@ export default function FloorPage({ params }: { params: { id: string } }) {
         <QuestPanel quests={quests} />
       </div>
 
+      {/* incoming connection request — their card, front and center */}
+      {incomingReq && (
+        <div className="pointer-events-none absolute left-1/2 top-24 -translate-x-1/2 sm:top-16">
+          <RequestCard
+            compact
+            req={incomingReq}
+            onRespond={(accept) => {
+              const peer = incomingReq.from.id;
+              const name = incomingReq.from.name;
+              setIncomingReq(null);
+              void respondToRequest(
+                state.profile.id,
+                state.profile.name,
+                peer,
+                accept,
+              ).then(() => refreshInbox());
+              showToast(
+                accept
+                  ? `Connected with ${name}. Chat lives in Connections.`
+                  : "Declined, quietly.",
+              );
+            }}
+          />
+        </div>
+      )}
+
       {/* interact hint */}
       {nearBooth && !activeBooth && (
         <div className="pointer-events-none absolute bottom-24 left-1/2 -translate-x-1/2">
@@ -928,8 +972,13 @@ export default function FloorPage({ params }: { params: { id: string } }) {
               }
               connected={
                 activeBooth.ownerId && !activeBooth.isYours
-                  ? state.connections.some((c) => c.peerId === activeBooth.ownerId)
+                  ? inbox.connections.some((c) => c.peerId === activeBooth.ownerId)
                   : connectedIds.has(activeBooth.startup.id)
+              }
+              pending={
+                Boolean(activeBooth.ownerId) &&
+                !activeBooth.isYours &&
+                inbox.outgoing.includes(activeBooth.ownerId ?? "")
               }
               onConnect={() =>
                 activeBooth.startup &&

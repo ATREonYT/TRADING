@@ -14,6 +14,8 @@ interface BoothCardProps {
   /** Claimed stand whose owner has left the floor (stand stays up, marked away). */
   ownerAway?: boolean;
   connected: boolean;
+  /** Owned stands only: a connection request is already out to this person. */
+  pending?: boolean;
   onConnect: () => void;
   onChat: () => void;
   /** Present only for your own stand: pack it up. */
@@ -35,6 +37,7 @@ export default function BoothCard({
   live = false,
   ownerAway = false,
   connected,
+  pending = false,
   onConnect,
   onChat,
   onUnclaim,
@@ -155,14 +158,16 @@ export default function BoothCard({
             <button
               type="button"
               onClick={onConnect}
-              disabled={connected}
-              className={`rounded-md border px-3 py-2 text-sm ${
+              disabled={connected || pending}
+              className={`btn-press rounded-md border px-3 py-2 text-sm ${
                 connected
                   ? "cursor-default border-verify/40 text-verify"
-                  : "border-accent text-accent hover:bg-accent-soft"
+                  : pending
+                    ? "cursor-default border-line text-muted"
+                    : "border-accent text-accent hover:bg-accent-soft"
               }`}
             >
-              {connected ? "Connected" : "Connect"}
+              {connected ? "Connected" : pending ? "Requested" : "Request to connect"}
             </button>
           </>
         ) : ownerAway ? (
@@ -174,14 +179,16 @@ export default function BoothCard({
             <button
               type="button"
               onClick={onConnect}
-              disabled={connected}
-              className={`rounded-md border px-3 py-2 text-sm ${
+              disabled={connected || pending}
+              className={`btn-press rounded-md border px-3 py-2 text-sm ${
                 connected
                   ? "cursor-default border-verify/40 text-verify"
-                  : "border-accent text-accent hover:bg-accent-soft"
+                  : pending
+                    ? "cursor-default border-line text-muted"
+                    : "border-accent text-accent hover:bg-accent-soft"
               }`}
             >
-              {connected ? "Connected" : "Connect"}
+              {connected ? "Connected" : pending ? "Requested" : "Request to connect"}
             </button>
           </>
         ) : (

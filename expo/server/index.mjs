@@ -108,6 +108,46 @@ const MAX_STANDS_PER_FLOOR = 64;
 let reports = [];
 const MAX_REPORTS = 500;
 
+/**
+ * social: profileId -> { name, requests: ConnectRequest[], outgoing: string[],
+ * connections: SocialConnection[] } — the mutual-connection graph.
+ * dms: pairKey ("idA|idB", sorted) -> DmMessage[] (oldest first, capped).
+ * Both persist to floor-data.json. No auth in this demo: profile ids are
+ * client-claimed, so this is a courtesy layer, not a security boundary.
+ */
+const social = new Map();
+const dms = new Map();
+const MAX_REQUESTS_PER_USER = 20;
+const MAX_CONNECTIONS_PER_USER = 200;
+const MAX_DM_PER_THREAD = 100;
+const MAX_SOCIAL_USERS = 2000;
+
+/** All live sockets per profile id (across every floor) — for social pushes. */
+const socketsByProfile = new Map();
+
+function pairKey(a, b) {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+function socialFor(profileId) {
+  let s = social.get(profileId);
+  if (!s) {
+    if (social.size >= MAX_SOCIAL_USERS) return null;
+    s = { name: "", requests: [], outgoing: [], connections: [] };
+    social.set(profileId, s);
+  }
+  return s;
+}
+
+function pushToProfile(profileId, ev) {
+  const socks = socketsByProfile.get(profileId);
+  if (!socks) return;
+  const frame = JSON.stringify(ev);
+  for (const sock of socks) {
+    if (sock.readyState === OPEN) sock.send(frame);
+  }
+}
+
 /** activity: floorId -> ActivityItem[] — oldest first, <= 20. */
 const activity = new Map();
 
@@ -192,6 +232,28 @@ function loadData() {
     }
   }
 
+  if (parsed.social && typeof parsed.social === "object") {
+    for (const [pid, s] of Object.entries(parsed.social)) {
+      if (!s || typeof s !== "object" || social.size >= MAX_SOCIAL_USERS) continue;
+      social.set(pid.slice(0, MAX_ID_LEN), {
+        name: typeof s.name === "string" ? s.name.slice(0, MAX_NAME_LEN) : "",
+        requests: Array.isArray(s.requests) ? s.requests.slice(0, MAX_REQUESTS_PER_USER) : [],
+        outgoing: Array.isArray(s.outgoing) ? s.outgoing.filter((x) => typeof x === "string").slice(0, 50) : [],
+        connections: Array.isArray(s.connections) ? s.connections.slice(0, MAX_CONNECTIONS_PER_USER) : [],
+      });
+    }
+  }
+
+  if (parsed.dms && typeof parsed.dms === "object") {
+    for (const [key, msgs] of Object.entries(parsed.dms)) {
+      if (!Array.isArray(msgs)) continue;
+      const clean = msgs
+        .filter((m) => m && typeof m === "object" && typeof m.fromId === "string" && typeof m.text === "string" && typeof m.ts === "number")
+        .slice(-MAX_DM_PER_THREAD);
+      if (clean.length) dms.set(key.slice(0, 2 * MAX_ID_LEN + 1), clean);
+    }
+  }
+
   if (Array.isArray(parsed.reports)) {
     reports = parsed.reports
       .filter((r) => r && typeof r === "object" && typeof r.ts === "number")
@@ -237,6 +299,8 @@ function saveNow() {
       [...stands].map(([floorId, byOwner]) => [floorId, Object.fromEntries(byOwner)]),
     ),
     reports,
+    social: Object.fromEntries(social),
+    dms: Object.fromEntries(dms),
   };
   const tmp = `${DATA_FILE}.tmp`;
   try {
@@ -468,6 +532,176 @@ function sendJson(res, body) {
   res.end(JSON.stringify(body));
 }
 
+/** Read a JSON POST body, capped at 32KB; resolves null on any problem. */
+function readJson(req) {
+  return new Promise((resolve) => {
+    let size = 0;
+    const chunks = [];
+    req.on("data", (c) => {
+      size += c.length;
+      if (size > 32 * 1024) {
+        resolve(null);
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on("end", () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      } catch {
+        resolve(null);
+      }
+    });
+    req.on("error", () => resolve(null));
+  });
+}
+
+/** Requester calling card, rebuilt from an untrusted body. */
+function sanitizeCard(card) {
+  if (!card || typeof card !== "object") return null;
+  const id = sanitizeStr(card.id, MAX_ID_LEN);
+  const name = sanitizeStr(card.name, MAX_NAME_LEN);
+  if (!id || !name) return null;
+  const badges = Array.isArray(card.badges)
+    ? card.badges.filter((b) => typeof b === "string").map((b) => b.slice(0, 32)).slice(0, 20)
+    : [];
+  const rev = Number(card.startupRevenue);
+  return {
+    id,
+    name,
+    title: sanitizeStr(card.title, 24) || undefined,
+    status: sanitizeStr(card.status, MAX_STATUS_LEN) || undefined,
+    badges,
+    connections: Math.min(9999, Math.max(0, Math.trunc(Number(card.connections) || 0))),
+    startupName: sanitizeStr(card.startupName, 40) || undefined,
+    startupRevenue: Number.isFinite(rev) ? Math.max(0, rev) : undefined,
+    floorsVisited: Math.min(99, Math.max(0, Math.trunc(Number(card.floorsVisited) || 0))),
+  };
+}
+
+/** Resolve a target that may be a live wire id (from a DM thread) to a profile id. */
+function resolveProfileId(target) {
+  for (const room of rooms.values()) {
+    const c = room.get(target);
+    if (c) return c.rawId;
+  }
+  return target;
+}
+
+/** POST /social/*: the mutual-connection and off-floor DM API. */
+async function handleSocialPost(req, res, pathname) {
+  const body = await readJson(req);
+  if (!body) {
+    notFound(res);
+    return;
+  }
+
+  if (pathname === "/social/request") {
+    const card = sanitizeCard(body.card);
+    const to = resolveProfileId(sanitizeStr(body.to, MAX_ID_LEN));
+    if (!card || !to || to === card.id) {
+      notFound(res);
+      return;
+    }
+    const sender = socialFor(card.id);
+    const recipient = socialFor(to);
+    if (!sender || !recipient) {
+      notFound(res);
+      return;
+    }
+    sender.name = card.name;
+    const already =
+      sender.connections.some((c) => c.peerId === to) ||
+      sender.outgoing.includes(to) ||
+      recipient.requests.some((r) => r.from.id === card.id);
+    if (!already) {
+      // A crossing request (they asked you first) auto-accepts — you both want it.
+      const crossing = sender.requests.findIndex((r) => r.from.id === to);
+      if (crossing >= 0) {
+        const theirs = sender.requests.splice(crossing, 1)[0];
+        acceptPair(card.id, card.name, to, theirs.from.name);
+      } else if (recipient.requests.length < MAX_REQUESTS_PER_USER && sender.outgoing.length < 50) {
+        recipient.requests.push({ from: card, ts: Date.now() });
+        sender.outgoing.push(to);
+        pushToProfile(to, { t: "connect_request", req: { from: card, ts: Date.now() } });
+      }
+      scheduleSave();
+    }
+    sendJson(res, { ok: true });
+    return;
+  }
+
+  if (pathname === "/social/respond") {
+    const me = sanitizeStr(body.me, MAX_ID_LEN);
+    const meName = sanitizeStr(body.meName, MAX_NAME_LEN) || "founder";
+    const peer = sanitizeStr(body.peer, MAX_ID_LEN);
+    const mine = me && social.get(me);
+    if (!mine || !peer) {
+      notFound(res);
+      return;
+    }
+    const idx = mine.requests.findIndex((r) => r.from.id === peer);
+    if (idx < 0) {
+      sendJson(res, { ok: true }); // already handled elsewhere
+      return;
+    }
+    const reqEntry = mine.requests.splice(idx, 1)[0];
+    const theirs = social.get(peer);
+    if (theirs) theirs.outgoing = theirs.outgoing.filter((x) => x !== me);
+    if (body.accept === true) {
+      acceptPair(me, meName, peer, reqEntry.from.name);
+    }
+    scheduleSave();
+    sendJson(res, { ok: true });
+    return;
+  }
+
+  if (pathname === "/social/dm") {
+    const from = sanitizeStr(body.from, MAX_ID_LEN);
+    const fromName = sanitizeStr(body.fromName, MAX_NAME_LEN) || "founder";
+    const to = sanitizeStr(body.to, MAX_ID_LEN);
+    const text = sanitizeText(body.text);
+    const mine = from && social.get(from);
+    if (!mine || !to || !text || !mine.connections.some((c) => c.peerId === to)) {
+      notFound(res); // DMs only flow between connected profiles
+      return;
+    }
+    mine.name = fromName;
+    const key = pairKey(from, to);
+    let thread = dms.get(key);
+    if (!thread) {
+      thread = [];
+      dms.set(key, thread);
+    }
+    thread.push({ fromId: from, text, ts: Date.now() });
+    if (thread.length > MAX_DM_PER_THREAD) thread.splice(0, thread.length - MAX_DM_PER_THREAD);
+    scheduleSave();
+    sendJson(res, { ok: true });
+    return;
+  }
+
+  notFound(res);
+}
+
+/** Store the mutual connection both ways and tell the requester if online. */
+function acceptPair(aId, aName, bId, bName) {
+  const a = socialFor(aId);
+  const b = socialFor(bId);
+  if (!a || !b) return;
+  const now = Date.now();
+  if (!a.connections.some((c) => c.peerId === bId) && a.connections.length < MAX_CONNECTIONS_PER_USER) {
+    a.connections.push({ peerId: bId, peerName: bName, ts: now });
+  }
+  if (!b.connections.some((c) => c.peerId === aId) && b.connections.length < MAX_CONNECTIONS_PER_USER) {
+    b.connections.push({ peerId: aId, peerName: aName, ts: now });
+  }
+  a.outgoing = a.outgoing.filter((x) => x !== bId);
+  b.outgoing = b.outgoing.filter((x) => x !== aId);
+  pushToProfile(bId, { t: "connect_accept", peerId: aId, peerName: aName });
+  pushToProfile(aId, { t: "connect_accept", peerId: bId, peerName: bName });
+}
+
 function notFound(res) {
   res.writeHead(404, {
     "Content-Type": "text/plain",
@@ -482,6 +716,43 @@ const server = createServer((req, res) => {
     url = new URL(req.url ?? "/", "http://internal");
   } catch {
     notFound(res);
+    return;
+  }
+
+  // CORS preflight for the JSON POST routes
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Max-Age": "86400",
+    });
+    res.end();
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/social") {
+    const me = (url.searchParams.get("me") || "").slice(0, MAX_ID_LEN);
+    if (!me) {
+      notFound(res);
+      return;
+    }
+    const s = social.get(me) ?? { requests: [], outgoing: [], connections: [] };
+    const threads = {};
+    for (const c of s.connections) {
+      threads[c.peerId] = dms.get(pairKey(me, c.peerId)) ?? [];
+    }
+    sendJson(res, {
+      requests: s.requests,
+      outgoing: s.outgoing,
+      connections: s.connections,
+      threads,
+    });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname.startsWith("/social/")) {
+    void handleSocialPost(req, res, url.pathname);
     return;
   }
 
@@ -583,6 +854,16 @@ wss.on("connection", (ws, req) => {
 
     client = { ws, id, rawId, name, look, s, status, title, claim: null };
     room.set(id, client);
+
+    // social push registry + keep the display name fresh for inboxes
+    let socks = socketsByProfile.get(rawId);
+    if (!socks) {
+      socks = new Set();
+      socketsByProfile.set(rawId, socks);
+    }
+    socks.add(ws);
+    const soc = socialFor(rawId);
+    if (soc) soc.name = name;
 
     const others = [...room.values()].filter((c) => c.id !== id).map(asRemotePlayer);
     send(ws, {
@@ -845,6 +1126,11 @@ wss.on("connection", (ws, req) => {
 
   ws.on("close", () => {
     if (!client || !room) return;
+    const socks = socketsByProfile.get(client.rawId);
+    if (socks) {
+      socks.delete(ws);
+      if (socks.size === 0) socketsByProfile.delete(client.rawId);
+    }
     room.delete(client.id);
     broadcast(room, { t: "player_leave", id: client.id });
     broadcast(room, { t: "status", online: true, count: room.size });

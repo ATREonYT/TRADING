@@ -120,7 +120,7 @@ export default function LobbyPage() {
           return (
             <article
               key={floor.id}
-              className={`panel flex flex-col p-5 ${locked ? "bg-paper/50" : ""}`}
+              className={`panel card-lift flex flex-col p-5 ${locked ? "bg-paper/50" : ""}`}
             >
               <div className="flex items-start justify-between gap-3">
                 <h2

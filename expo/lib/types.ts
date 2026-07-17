@@ -204,6 +204,55 @@ export interface ActivityItem {
   ts: number;
 }
 
+// ---------- social graph (server-side: requests, mutual connections, DMs) ----------
+
+/**
+ * The requester's calling card, shown to the recipient before accept/decline.
+ * Client-attested (this demo has no auth) — the server caps lengths only.
+ */
+export interface ProfileCard {
+  id: string; // profile id
+  name: string;
+  title?: string;
+  status?: string;
+  badges: string[]; // badge ids, capped
+  connections: number;
+  startupName?: string;
+  /** Verified monthly revenue of their startup (drives the rank badge). */
+  startupRevenue?: number;
+  floorsVisited: number;
+}
+
+export interface ConnectRequest {
+  from: ProfileCard;
+  ts: number;
+}
+
+/** An accepted, mutual connection stored on the server. */
+export interface SocialConnection {
+  peerId: string;
+  peerName: string;
+  ts: number;
+}
+
+export interface DmMessage {
+  fromId: string;
+  text: string;
+  ts: number;
+}
+
+/**
+ * GET /social?me=<profileId> on the floor server returns this. Threads exist
+ * only between connected profiles, trimmed to the last 100 messages.
+ */
+export interface InboxData {
+  requests: ConnectRequest[];
+  /** Profile ids this user has requested (pending on their side). */
+  outgoing: string[];
+  connections: SocialConnection[];
+  threads: Record<string, DmMessage[]>;
+}
+
 export type NetEvent =
   | {
       t: "welcome";
@@ -226,6 +275,10 @@ export type NetEvent =
   | { t: "guestbook"; key: string; entry: GuestbookEntry }
   /** One new ticker line (broadcast to the floor). */
   | { t: "activity"; item: ActivityItem }
+  /** Someone wants to connect with YOU (pushed if you're online anywhere). */
+  | { t: "connect_request"; req: ConnectRequest }
+  /** Your outgoing request was accepted. */
+  | { t: "connect_accept"; peerId: string; peerName: string }
   | { t: "chat"; msg: ChatMsg }
   | { t: "status"; online: boolean; count: number };
 
