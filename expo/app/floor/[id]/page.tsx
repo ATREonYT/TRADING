@@ -22,7 +22,7 @@ import type {
   Startup,
 } from "@/lib/types";
 import { questStates, unlockedEmotes } from "@/lib/data/quests";
-import { buildCard, respondToRequest, sendConnectRequest, useInbox } from "@/lib/social";
+import { buildCard, respondToRequest, sendConnectRequest, sendSocialDm, useInbox } from "@/lib/social";
 import RequestCard from "@/components/RequestCard";
 import BoothCard from "@/components/BoothCard";
 import OpenStandCard from "@/components/OpenStandCard";
@@ -32,6 +32,7 @@ import HoverCard from "@/components/HoverCard";
 import TutorialCoach from "@/components/TutorialCoach";
 import QuestPanel from "@/components/QuestPanel";
 import EventPill from "@/components/EventPill";
+import ConfettiBurst from "@/components/ConfettiBurst";
 import Toast, { type ToastData } from "@/components/Toast";
 import TierTag, { TIER_LABEL } from "@/components/TierTag";
 
@@ -43,10 +44,11 @@ function firstName(full: string): string {
   return full.split(" ")[0] || full;
 }
 
-/** One chat thread in the panel: an NPC founder DM or a live-player DM. */
+/** One chat thread in the panel: an NPC founder DM, a live-player DM, or a
+ * connection DM ("social") that follows you between floors and pages. */
 interface ThreadState {
-  key: string; // "npc:<startupId>" | "player:<wireId>"
-  kind: "npc" | "player";
+  key: string; // "npc:<startupId>" | "player:<wireId>" | "social:<profileId>"
+  kind: "npc" | "player" | "social";
   label: string;
   title: string;
   startupId?: string;
@@ -112,6 +114,8 @@ export default function FloorPage({ params }: { params: { id: string } }) {
   const [helpOpen, setHelpOpen] = useState(false);
   /** Incoming connection request shown as a popup card (newest wins). */
   const [incomingReq, setIncomingReq] = useState<ConnectRequest | null>(null);
+  /** Incremented on each quest completion — triggers the confetti burst. */
+  const [burst, setBurst] = useState(0);
 
   // ---- refs (stable across the game's lifetime) ----
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -437,30 +441,42 @@ export default function FloorPage({ params }: { params: { id: string } }) {
 
       const th = threadsRef.current[tabKey];
       if (!th || !th.open) return;
-      const mine: ChatMsg = {
-        id: uid(),
-        fromId: me.id,
-        from: me.name,
-        text,
-        ts: Date.now(),
-        scope: "dm",
-        peerId: th.kind === "player" ? th.peerId : `npc:${th.startupId}`,
-      };
-      setThreads((prev) => {
-        const cur = prev[tabKey];
-        if (!cur) return prev;
-        return {
-          ...prev,
-          [tabKey]: {
-            ...cur,
-            msgs: [...cur.msgs, mine],
-            typing: cur.kind === "npc" ? true : cur.typing,
-          },
+      // Social threads skip the local append — the push echo lands instantly.
+      if (th.kind !== "social") {
+        const mine: ChatMsg = {
+          id: uid(),
+          fromId: me.id,
+          from: me.name,
+          text,
+          ts: Date.now(),
+          scope: "dm",
+          peerId: th.kind === "player" ? th.peerId : `npc:${th.startupId}`,
         };
-      });
+        setThreads((prev) => {
+          const cur = prev[tabKey];
+          if (!cur) return prev;
+          return {
+            ...prev,
+            [tabKey]: {
+              ...cur,
+              msgs: [...cur.msgs, mine],
+              typing: cur.kind === "npc" ? true : cur.typing,
+            },
+          };
+        });
+      }
       actions.completeOnboarding("talk");
       // Quest deed: distinct founders/players talked to.
       actions.recordTalkedTo(th.kind === "player" ? (th.peerId ?? tabKey) : (th.startupId ?? tabKey));
+
+      if (th.kind === "social") {
+        // Connection DM: no local append — the server pushes the echo back
+        // instantly to every tab, which keeps ordering consistent everywhere.
+        if (th.peerId) {
+          void sendSocialDm(me.id, me.name, th.peerId, text);
+        }
+        return;
+      }
 
       if (th.kind === "player") {
         // Local-append + filter the server echo (same policy as the floor tab).
@@ -549,6 +565,7 @@ export default function FloorPage({ params }: { params: { id: string } }) {
       actions.markQuestClaimed(q.def.id);
       actions.grantBadge(q.def.reward.badge);
       showToast(`Quest complete: ${q.def.title} — ${q.def.rewardLabel}`);
+      setBurst((b) => b + 1);
       break; // one toast per render pass; the next completes on the following pass
     }
   }, [ready, quests, actions, showToast]);
@@ -642,6 +659,52 @@ export default function FloorPage({ params }: { params: { id: string } }) {
             },
           };
         });
+      }
+      if (ev.t === "social_dm") {
+        // A connection DM (maybe sent from the Connections screen) — surface
+        // it as a chat thread right here on the floor. Own echoes keep the
+        // thread consistent when you sent it from another tab or this panel.
+        const myId = profileRef.current.id;
+        const mineSent = ev.from === myId;
+        const peer = mineSent ? ev.to : ev.from;
+        const peerName = mineSent ? ev.toName : ev.fromName;
+        const key = `social:${peer}`;
+        const msg: ChatMsg = {
+          id: uid(),
+          fromId: mineSent ? myId : peer,
+          from: mineSent ? profileRef.current.name : ev.fromName,
+          text: ev.text,
+          ts: ev.ts,
+          scope: "dm",
+          peerId: peer,
+        };
+        setThreads((prev) => {
+          const existing = prev[key];
+          const unread = !mineSent && tabRef.current !== key;
+          if (existing) {
+            return {
+              ...prev,
+              [key]: { ...existing, open: true, msgs: [...existing.msgs, msg], unread },
+            };
+          }
+          return {
+            ...prev,
+            [key]: {
+              key,
+              kind: "social",
+              label: peerName,
+              title: `${peerName} · connection`,
+              peerId: peer,
+              msgs: [msg],
+              typing: false,
+              unread,
+              open: true,
+            },
+          };
+        });
+        if (!mineSent && tabRef.current !== key) {
+          showToast(`${ev.fromName}: ${ev.text.slice(0, 60)}${ev.text.length > 60 ? "…" : ""}`);
+        }
       }
       if (ev.t === "connect_request") {
         // Someone wants to connect — show their card right here on the floor.
@@ -838,9 +901,11 @@ export default function FloorPage({ params }: { params: { id: string } }) {
       connected:
         t.kind === "npc"
           ? t.startupId !== undefined && connectedIds.has(t.startupId)
-          : // Mutual (server-side) connections; wire ids may carry a tab suffix.
-            inbox.connections.some((c) => matchesPeer(c.peerId, t.peerId)) ||
-            inbox.outgoing.some((p) => matchesPeer(p, t.peerId)),
+          : t.kind === "social"
+            ? true // a social thread only exists between connected people
+            : // Mutual (server-side) connections; wire ids may carry a tab suffix.
+              inbox.connections.some((c) => matchesPeer(c.peerId, t.peerId)) ||
+              inbox.outgoing.some((p) => matchesPeer(p, t.peerId)),
     }));
 
   const myIds = [
@@ -1099,6 +1164,7 @@ export default function FloorPage({ params }: { params: { id: string } }) {
       {/* hover card — desktop pointer only by nature */}
       <HoverCard target={hover} startups={startups} />
 
+      <ConfettiBurst burstId={burst} />
       <Toast toast={toast} />
     </div>
   );

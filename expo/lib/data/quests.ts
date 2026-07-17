@@ -50,7 +50,7 @@ export const QUESTS: QuestDef[] = [
     goal: 3,
     unit: "founders",
     reward: { badge: "rounds", emote: "rocket" },
-    rewardLabel: "unlocks the 🚀 reaction (key 6)",
+    rewardLabel: "unlocks the Rocket reaction (key 6)",
   },
   {
     id: "connector",
@@ -68,7 +68,7 @@ export const QUESTS: QuestDef[] = [
     goal: 2,
     unit: "guestbooks",
     reward: { badge: "mark", emote: "fire" },
-    rewardLabel: "unlocks the 🔥 reaction (key 7)",
+    rewardLabel: "unlocks the Fire reaction (key 7)",
   },
   {
     id: "open-for-business",
@@ -86,7 +86,7 @@ export const QUESTS: QuestDef[] = [
     goal: 2,
     unit: "floors",
     reward: { badge: "tourist", emote: "handshake" },
-    rewardLabel: "unlocks the 🤝 reaction (key 8)",
+    rewardLabel: "unlocks the Handshake reaction (key 8)",
   },
   {
     id: "crowd-pleaser",

@@ -12,8 +12,10 @@ const PAPER = "#FFFDF5";
 const HAIRLINE = "#E4DFD3";
 const INK = "#23201A";
 
+import type { EmoteKind } from "../lib/types";
+import { drawEmoteIcon } from "./emotes";
+
 const FONT = "11px system-ui, -apple-system, Segoe UI, sans-serif";
-const EMOTE_FONT = "20px system-ui, -apple-system, Segoe UI, sans-serif";
 const MAX_TEXT_W = 150; // px, wrap width
 const MAX_LINES = 3;
 const LINE_H = 14;
@@ -33,7 +35,7 @@ const EMOTE_FADE_MS = 150;
 
 interface Bubble {
   kind: "chat" | "emote";
-  text: string; // chat text, or the emote character
+  text: string; // chat text; for emotes, the EmoteKind
   born: number; // ms clock (performance.now)
   ttl: number;
   lines: string[] | null; // chat layout, computed lazily on first draw
@@ -85,11 +87,11 @@ export class BubbleManager {
     });
   }
 
-  /** Show (or replace) an emote pop bubble; char is the reaction glyph. */
-  showEmote(entityId: string, char: string, now: number): void {
+  /** Show (or replace) an emote pop bubble with the hand-drawn pixel icon. */
+  showEmote(entityId: string, emote: EmoteKind, now: number): void {
     this.bubbles.set(entityId, {
       kind: "emote",
-      text: char,
+      text: emote,
       born: now,
       ttl: EMOTE_TTL,
       lines: null,
@@ -260,11 +262,9 @@ export class BubbleManager {
     ctx.lineTo(3, EMOTE_R - 1.5);
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = INK;
-    ctx.font = EMOTE_FONT;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(b.text, 0, 1);
+    // the reaction itself: our own pixel art, not the OS emoji font
+    const iconSize = 20;
+    drawEmoteIcon(ctx, b.text as EmoteKind, -iconSize / 2, -iconSize / 2, iconSize);
     ctx.restore();
     ctx.globalAlpha = 1;
   }

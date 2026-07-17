@@ -118,6 +118,77 @@ export function useInbox(
   return [inbox, refresh, reachable];
 }
 
+/**
+ * Live social pushes for pages that aren't on a floor: opens a lightweight
+ * ws connection to the invisible "__inbox" room, where the server delivers
+ * connect_request / connect_accept / social_dm events instantly. Reconnects
+ * every 5s while mounted; silently offline when the server is down.
+ */
+export function useSocialPush(
+  profileId: string,
+  onEvent: (ev: { t: string } & Record<string, unknown>) => void,
+): void {
+  const cbRef = useRef(onEvent);
+  cbRef.current = onEvent;
+
+  useEffect(() => {
+    if (!profileId || typeof window === "undefined") return;
+    let ws: WebSocket | null = null;
+    let closed = false;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+
+    const open = () => {
+      if (closed) return;
+      const base = httpBase().replace(/^http/, "ws");
+      if (!base) return;
+      try {
+        ws = new WebSocket(`${base}/ws?floor=__inbox`);
+      } catch {
+        retry = setTimeout(open, 5000);
+        return;
+      }
+      ws.onopen = () => {
+        ws?.send(
+          JSON.stringify({
+            t: "join",
+            player: { id: profileId, name: "inbox", look: { skin: 0, outfit: 0, hair: 0 } },
+            s: { x: 0, y: 0, dir: "down", moving: false },
+            token: tokenFor(profileId),
+          }),
+        );
+      };
+      ws.onmessage = (e) => {
+        try {
+          const ev = JSON.parse(String(e.data)) as { t: string } & Record<string, unknown>;
+          if (ev.t === "social_dm" || ev.t === "connect_request" || ev.t === "connect_accept") {
+            cbRef.current(ev);
+          }
+        } catch {
+          // malformed frame — ignore
+        }
+      };
+      ws.onclose = () => {
+        ws = null;
+        if (!closed) retry = setTimeout(open, 5000);
+      };
+      ws.onerror = () => {
+        // close follows; the close handler schedules the retry
+      };
+    };
+
+    open();
+    return () => {
+      closed = true;
+      if (retry) clearTimeout(retry);
+      try {
+        ws?.close(1000);
+      } catch {
+        // already closed
+      }
+    };
+  }, [profileId]);
+}
+
 /** localStorage-backed "last seen" per DM thread, for unread dots. */
 const SEEN_KEY = "founderfloor:dm-seen";
 

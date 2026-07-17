@@ -12,12 +12,12 @@ import { useAppState } from "@/lib/store";
 import { FLOORS } from "@/lib/data/floors";
 import { STARTUPS } from "@/lib/data/startups";
 import {
-  buildCard,
   getSeenMap,
   markThreadSeen,
   respondToRequest,
   sendSocialDm,
   useInbox,
+  useSocialPush,
 } from "@/lib/social";
 import RequestCard from "@/components/RequestCard";
 import Toast, { type ToastData } from "@/components/Toast";
@@ -57,7 +57,9 @@ export default function ConnectionsPage() {
   }, [toast]);
 
   const me = ready ? state.profile.id : "";
-  const [inbox, refresh, reachable] = useInbox(me, 5000);
+  const [inbox, refresh, reachable] = useInbox(me, 15_000);
+  // Live pushes make the chat real-time; polling is just the safety net.
+  useSocialPush(me, () => refresh());
 
   const activeMsgs = openThread ? inbox.threads[openThread] ?? [] : [];
   const activePeer = inbox.connections.find((c) => c.peerId === openThread);

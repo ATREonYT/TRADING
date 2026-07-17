@@ -9,7 +9,7 @@
  * hover cards, a bottom-right minimap, and ambient NPC chatter.
  */
 
-import { EMOTES, TILE } from "../lib/types";
+import { TILE } from "../lib/types";
 import type {
   BoothClaim,
   BoothInstance,
@@ -45,11 +45,6 @@ const MINIMAP_BOTTOM = 56; // keep clear of the controls hint (fine pointers)
 const MINIMAP_TOP_COARSE = 148; // below the top bar + ticker; the mobile HUD owns the bottom
 const LABEL_H = 14;
 const LABEL_H_STATUS = 25;
-
-const EMOTE_CHARS: Record<EmoteKind, string> = EMOTES.reduce((acc, e) => {
-  acc[e.kind] = e.char;
-  return acc;
-}, {} as Record<EmoteKind, string>);
 
 interface Remote {
   name: string;
@@ -96,7 +91,7 @@ export function createGame(opts: GameOptions): GameHandle {
   const bubbles = new BubbleManager();
   const director = new AmbientDirector(opts.idleLines ?? {}, {
     say: (npc, line) => bubbles.showChat(npc.bubbleId, line, performance.now()),
-    emote: (npc, kind) => bubbles.showEmote(npc.bubbleId, EMOTE_CHARS[kind], performance.now()),
+    emote: (npc, kind) => bubbles.showEmote(npc.bubbleId, kind, performance.now()),
   });
 
   let firstMoveDone = false;
@@ -290,7 +285,7 @@ export function createGame(opts: GameOptions): GameHandle {
       case "emote":
         // own emotes are rendered at send time; the echo must not double-render
         if (ev.id !== net.selfId && remotes.has(ev.id) && !muted.has(ev.id)) {
-          bubbles.showEmote(ev.id, EMOTE_CHARS[ev.kind], performance.now());
+          bubbles.showEmote(ev.id, ev.kind, performance.now());
         }
         break;
       case "status":
@@ -920,7 +915,7 @@ export function createGame(opts: GameOptions): GameHandle {
       rebuild();
     },
     emote(kind: EmoteKind): void {
-      bubbles.showEmote("me", EMOTE_CHARS[kind], performance.now());
+      bubbles.showEmote("me", kind, performance.now());
       net.sendEmote(kind); // the echo is ignored above, so no double-render
       director.onPlayerEmote(kind, player.x, player.y, npcs);
       if (!firstEmoteDone) {

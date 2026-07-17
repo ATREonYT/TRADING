@@ -36,7 +36,9 @@ badge and NPC founders only.
 - **1–8** — reactions; they pop as a bubble over your head for everyone on the
   floor. The bar at the bottom does the same thing with a mouse or a thumb.
   1–5 (wave, laugh, clap, heart, question) are always available; 6–8
-  (🚀, 🔥, 🤝) are quest rewards
+  (rocket, fire, handshake) are quest rewards. Every reaction is our own
+  hand-drawn 10x10 pixel bitmap (game/emotes.ts) rendered in the same palette
+  as the avatars and booths — no OS emoji font anywhere in the world
 - **?** (bottom right) — controls reference; the floor stays quiet otherwise:
   chat starts folded into a one-line bar (with the activity ticker in its
   header) and only unfolds when a conversation opens
@@ -114,9 +116,13 @@ its rank, floors visited — and accept or decline (on the floor as a popup if
 they're online, otherwise in their inbox). Two people who request each other
 auto-connect. Accepted connections live server-side and appear on
 **/connections**, where chat keeps working even when neither of you is on a
-floor (HTTP polling against the floor server; messages persist in
-floor-data.json). The nav link carries an unread dot. NPC founders still
-connect instantly — they're exhibits, not people.
+floor. Delivery is **live**: DMs are pushed over WebSocket to both parties
+wherever they are — someone texting you from their Connections screen pops up
+as a toast and a chat thread on whatever floor you're walking (the Connections
+page keeps a lightweight socket to an invisible "__inbox" room; polling is
+just the fallback). Messages persist in floor-data.json. The nav link carries
+an unread dot. NPC founders still connect instantly — they're exhibits, not
+people.
 
 New endpoints: `GET /social?me=ID[&token=..]`, `POST /social/request|respond|dm`.
 

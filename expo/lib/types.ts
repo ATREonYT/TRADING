@@ -279,6 +279,12 @@ export type NetEvent =
   | { t: "connect_request"; req: ConnectRequest }
   /** Your outgoing request was accepted. */
   | { t: "connect_accept"; peerId: string; peerName: string }
+  /**
+   * A connection DM (the off-floor kind), pushed live to BOTH parties'
+   * sockets on every floor — so a message sent from the Connections screen
+   * pops up wherever the other person is.
+   */
+  | { t: "social_dm"; from: string; fromName: string; to: string; toName: string; text: string; ts: number }
   | { t: "chat"; msg: ChatMsg }
   | { t: "status"; online: boolean; count: number };
 

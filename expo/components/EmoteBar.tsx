@@ -6,9 +6,10 @@
  * three slots are quest rewards — locked ones show which quest opens them.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EMOTES, type EmoteKind } from "@/lib/types";
 import { questForEmote } from "@/lib/data/quests";
+import { emoteDataUrl } from "@/game/emotes";
 
 function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -66,9 +67,7 @@ export default function EmoteBar({
               title={quest ? `Locked — finish "${quest.title}" (${quest.blurb})` : "Locked"}
               className="flex h-10 w-10 cursor-help flex-col items-center justify-center rounded-sm opacity-40"
             >
-              <span aria-hidden="true" className="text-base leading-none grayscale">
-                {em.char}
-              </span>
+              <PixelEmote kind={em.kind} dim />
               <span aria-hidden="true" className="micro mt-0.5 leading-none text-muted">
                 ✕
               </span>
@@ -84,9 +83,7 @@ export default function EmoteBar({
             title={`${em.label} — ${em.key}`}
             className="flex h-10 w-10 flex-col items-center justify-center rounded-sm hover:bg-paper active:bg-accent-soft"
           >
-            <span aria-hidden="true" className="text-base leading-none">
-              {em.char}
-            </span>
+            <PixelEmote kind={em.kind} />
             <span aria-hidden="true" className="micro mt-0.5 leading-none text-muted">
               {em.key}
             </span>
@@ -94,5 +91,25 @@ export default function EmoteBar({
         );
       })}
     </div>
+  );
+}
+
+/** Our own pixel-art reaction icon (client-rendered to a data URL). */
+function PixelEmote({ kind, dim = false }: { kind: EmoteKind; dim?: boolean }) {
+  const [url, setUrl] = useState("");
+  useEffect(() => {
+    setUrl(emoteDataUrl(kind, 18));
+  }, [kind]);
+  if (!url) return <span aria-hidden="true" className="block h-[18px] w-[18px]" />;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt=""
+      aria-hidden="true"
+      width={18}
+      height={18}
+      className={`pixelated ${dim ? "opacity-70 grayscale" : ""}`}
+    />
   );
 }

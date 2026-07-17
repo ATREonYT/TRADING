@@ -10,9 +10,9 @@ import { useEffect, useRef, useState } from "react";
 import type { ChatMsg } from "@/lib/types";
 
 export interface ChatThread {
-  /** "npc:<startupId>" or "player:<wireId>". */
+  /** "npc:<startupId>", "player:<wireId>", or "social:<profileId>". */
   key: string;
-  kind: "npc" | "player";
+  kind: "npc" | "player" | "social";
   /** Short tab label (a first name, usually). */
   label: string;
   /** Header line, e.g. "Marisol Vega · Soup Ticket". */

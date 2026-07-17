@@ -814,9 +814,17 @@ async function handleSocialPost(req, res, pathname) {
       thread = [];
       dms.set(key, thread);
     }
-    thread.push({ fromId: from, text, ts: Date.now() });
+    const msg = { fromId: from, text, ts: Date.now() };
+    thread.push(msg);
     if (thread.length > MAX_DM_PER_THREAD) thread.splice(0, thread.length - MAX_DM_PER_THREAD);
     scheduleSave();
+    // Live delivery: both parties' sockets everywhere (floors, inbox tabs) —
+    // a message sent from the Connections screen pops up on the recipient's
+    // floor immediately, and the sender's other tabs stay in sync.
+    const toName = social.get(to)?.name || "connection";
+    const ev = { t: "social_dm", from, fromName, to, toName, text, ts: msg.ts };
+    pushToProfile(to, ev);
+    pushToProfile(from, ev);
     sendJson(res, { ok: true });
     return;
   }
@@ -1041,7 +1049,9 @@ wss.on("connection", (ws, req) => {
     }
     const suppressed = seen.has(name);
     seen.set(name, now);
-    if (!suppressed) pushActivity(room, floorId, `${name} walked in`);
+    // "__inbox" is the invisible room the Connections screen joins for live
+    // pushes — no ticker lines for it, nobody "walks into" their own inbox.
+    if (!suppressed && floorId !== "__inbox") pushActivity(room, floorId, `${name} walked in`);
     console.log(`[ws] join  floor=${floorId} id=${id} name="${name}" (${room.size} online)`);
 
     // A stand carried in with the join frame goes through the same arbitration.
