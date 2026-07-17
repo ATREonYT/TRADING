@@ -3,6 +3,7 @@ import Link from "next/link";
 import "./globals.css";
 import PixelLogo from "@/components/PixelLogo";
 import NavConnections from "@/components/NavConnections";
+import Messenger from "@/components/Messenger";
 
 export const metadata: Metadata = {
   title: "FounderFloor — a walkable expo for startups",
@@ -60,6 +61,10 @@ export default function RootLayout({
         </header>
 
         <div className="flex-1">{children}</div>
+
+        {/* site-wide chats: bubble button bottom-right, mail toasts top-right
+            (hides itself on floors — the game has its own chat panel) */}
+        <Messenger />
 
         <footer className="border-t border-line bg-panel">
           <div className="mx-auto flex w-full max-w-5xl flex-col gap-1 px-4 py-6 text-sm text-muted sm:flex-row sm:items-baseline sm:justify-between">

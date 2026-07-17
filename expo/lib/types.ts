@@ -237,6 +237,8 @@ export interface ConnectRequest {
 export interface SocialConnection {
   peerId: string;
   peerName: string;
+  /** Their startup's name at connect time, when they had one — shown in chat lists. */
+  peerStartup?: string;
   ts: number;
 }
 

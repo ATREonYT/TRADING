@@ -57,8 +57,17 @@ export function respondToRequest(
   meName: string,
   peer: string,
   accept: boolean,
+  meStartup?: string,
 ): Promise<boolean> {
-  return post("/social/respond", { me, meName, peer, accept, token: tokenFor(me), gs: guestSecret() });
+  return post("/social/respond", {
+    me,
+    meName,
+    peer,
+    accept,
+    meStartup,
+    token: tokenFor(me),
+    gs: guestSecret(),
+  });
 }
 
 export function sendSocialDm(

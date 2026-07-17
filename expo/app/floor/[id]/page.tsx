@@ -25,6 +25,7 @@ import type {
 import { questStates, unlockedEmotes } from "@/lib/data/quests";
 import { buildCard, respondToRequest, sendConnectRequest, sendSocialDm, useInbox } from "@/lib/social";
 import RequestCard from "@/components/RequestCard";
+import MailToast, { type MailToastData } from "@/components/MailToast";
 import BoothCard from "@/components/BoothCard";
 import OpenStandCard from "@/components/OpenStandCard";
 import ChatPanel, { type ChatThread } from "@/components/ChatPanel";
@@ -115,6 +116,8 @@ export default function FloorPage({ params }: { params: { id: string } }) {
   const [helpOpen, setHelpOpen] = useState(false);
   /** Incoming connection request shown as a popup card (newest wins). */
   const [incomingReq, setIncomingReq] = useState<ConnectRequest | null>(null);
+  /** Incoming connection DM — pixel-mail notification, click opens the thread. */
+  const [mailToast, setMailToast] = useState<MailToastData | null>(null);
   /** Incremented on each quest completion — triggers the confetti burst. */
   const [burst, setBurst] = useState(0);
 
@@ -188,6 +191,16 @@ export default function FloorPage({ params }: { params: { id: string } }) {
     const onChange = (e: MediaQueryListEvent): void => setCoarse(e.matches);
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  // Mail toast click: open that connection's chat thread in the panel.
+  const openSocialFromToast = useCallback((peerId: string) => {
+    const key = `social:${peerId}`;
+    setThreads((prev) =>
+      prev[key] ? { ...prev, [key]: { ...prev[key], open: true, unread: false } } : prev,
+    );
+    setTab(key);
+    setChatCollapsed(false);
   }, []);
 
   // Escape closes the topmost overlay (request card first, then booth card) —
@@ -732,7 +745,12 @@ export default function FloorPage({ params }: { params: { id: string } }) {
           };
         });
         if (!mineSent && tabRef.current !== key) {
-          showToast(`${ev.fromName}: ${ev.text.slice(0, 60)}${ev.text.length > 60 ? "…" : ""}`);
+          setMailToast({
+            id: Date.now(),
+            fromName: ev.fromName,
+            text: ev.text,
+            peerId: peer,
+          });
         }
       }
       if (ev.t === "connect_request") {
@@ -1017,6 +1035,19 @@ export default function FloorPage({ params }: { params: { id: string } }) {
         <QuestPanel quests={quests} />
       </div>
 
+      {/* incoming connection DM — pixel mail, top right, click to open */}
+      <MailToast
+        toast={
+          mailToast && {
+            ...mailToast,
+            company: inbox.connections.find((c) => c.peerId === mailToast.peerId)
+              ?.peerStartup,
+          }
+        }
+        onOpen={openSocialFromToast}
+        onDismiss={() => setMailToast(null)}
+      />
+
       {/* incoming connection request — their card, front and center */}
       {incomingReq && (
         <div className="pointer-events-none absolute left-1/2 top-24 -translate-x-1/2 sm:top-16">
@@ -1031,6 +1062,7 @@ export default function FloorPage({ params }: { params: { id: string } }) {
                 state.profile.name,
                 from.id,
                 accept,
+                state.myStartup?.name,
               ).then(() => refreshInbox());
               if (accept) {
                 // Mirror the mutual connection into the local store so quests

@@ -103,7 +103,7 @@ export default function ConnectionsPage() {
         });
       }
     }
-    await respondToRequest(me, state.profile.name, peer, accept);
+    await respondToRequest(me, state.profile.name, peer, accept, state.myStartup?.name);
     refresh();
     setToast({
       id: Date.now(),
@@ -199,7 +199,12 @@ export default function ConnectionsPage() {
                           aria-pressed={openThread === c.peerId}
                           className="min-w-0 flex-1 text-left"
                         >
-                          <span className="block truncate text-ink">{c.peerName}</span>
+                          <span className="block truncate text-ink">
+                            {c.peerName}
+                            {c.peerStartup && (
+                              <span className="text-muted"> · {c.peerStartup}</span>
+                            )}
+                          </span>
                           <span className="block truncate text-xs text-muted">
                             {last
                               ? `${last.fromId === me ? "you: " : ""}${last.text}`

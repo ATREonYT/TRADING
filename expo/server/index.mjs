@@ -893,7 +893,7 @@ async function handleSocialPost(req, res, pathname) {
       const crossing = sender.requests.findIndex((r) => r.from.id === to);
       if (crossing >= 0) {
         const theirs = sender.requests.splice(crossing, 1)[0];
-        acceptPair(card.id, card.name, to, theirs.from.name);
+        acceptPair(card.id, card.name, to, theirs.from.name, card.startupName, theirs.from.startupName);
       } else if (recipient.requests.length < MAX_REQUESTS_PER_USER && sender.outgoing.length < 50) {
         recipient.requests.push({ from: card, ts: Date.now() });
         sender.outgoing.push(to);
@@ -923,7 +923,7 @@ async function handleSocialPost(req, res, pathname) {
     const theirs = social.get(peer);
     if (theirs) theirs.outgoing = theirs.outgoing.filter((x) => x !== me);
     if (body.accept === true) {
-      acceptPair(me, meName, peer, reqEntry.from.name);
+      acceptPair(me, meName, peer, reqEntry.from.name, body.meStartup, reqEntry.from.startupName);
     }
     scheduleSave();
     sendJson(res, { ok: true });
@@ -965,17 +965,22 @@ async function handleSocialPost(req, res, pathname) {
   notFound(res);
 }
 
-/** Store the mutual connection both ways and tell the requester if online. */
-function acceptPair(aId, aName, bId, bName) {
+/**
+ * Store the mutual connection both ways and tell the requester if online.
+ * Startup names ride along (when known) so chat lists can show "name · company".
+ */
+function acceptPair(aId, aName, bId, bName, aStartup, bStartup) {
   const a = socialFor(aId);
   const b = socialFor(bId);
   if (!a || !b) return;
   const now = Date.now();
+  const aCo = sanitizeStr(aStartup, 40) || undefined;
+  const bCo = sanitizeStr(bStartup, 40) || undefined;
   if (!a.connections.some((c) => c.peerId === bId) && a.connections.length < MAX_CONNECTIONS_PER_USER) {
-    a.connections.push({ peerId: bId, peerName: bName, ts: now });
+    a.connections.push({ peerId: bId, peerName: bName, peerStartup: bCo, ts: now });
   }
   if (!b.connections.some((c) => c.peerId === aId) && b.connections.length < MAX_CONNECTIONS_PER_USER) {
-    b.connections.push({ peerId: aId, peerName: aName, ts: now });
+    b.connections.push({ peerId: aId, peerName: aName, peerStartup: aCo, ts: now });
   }
   a.outgoing = a.outgoing.filter((x) => x !== bId);
   b.outgoing = b.outgoing.filter((x) => x !== aId);

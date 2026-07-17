@@ -326,22 +326,27 @@ export function createGame(opts: GameOptions): GameHandle {
     typeof window.matchMedia === "function" &&
     window.matchMedia("(pointer: coarse)").matches;
   const keys = new Set<string>();
-  const keyOf = (k: string): string | null => {
-    switch (k) {
-      case "w":
-      case "W":
+  // WASD matches on e.code (the PHYSICAL key), not e.key — on AZERTY,
+  // Cyrillic, and other layouts the same keys produce different characters,
+  // which silently broke WASD for anyone not on US QWERTY. Arrows keep e.key.
+  const keyOf = (e: KeyboardEvent): string | null => {
+    switch (e.code) {
+      case "KeyW":
+        return "up";
+      case "KeyS":
+        return "down";
+      case "KeyA":
+        return "left";
+      case "KeyD":
+        return "right";
+    }
+    switch (e.key) {
       case "ArrowUp":
         return "up";
-      case "s":
-      case "S":
       case "ArrowDown":
         return "down";
-      case "a":
-      case "A":
       case "ArrowLeft":
         return "left";
-      case "d":
-      case "D":
       case "ArrowRight":
         return "right";
       default:
@@ -351,18 +356,18 @@ export function createGame(opts: GameOptions): GameHandle {
 
   const onKeyDown = (e: KeyboardEvent): void => {
     if (!inputEnabled) return;
-    if (e.key === "m" || e.key === "M") {
+    if (e.code === "KeyM") {
       minimapOn = !minimapOn;
       return;
     }
-    if (e.key === "e" || e.key === "E" || e.key === "Enter") {
+    if (e.code === "KeyE" || e.key === "Enter") {
       if (nearBooth) {
         e.preventDefault();
         cb.onInteract(nearBooth);
       }
       return;
     }
-    const k = keyOf(e.key);
+    const k = keyOf(e);
     if (k) {
       e.preventDefault();
       keys.add(k);
@@ -370,7 +375,7 @@ export function createGame(opts: GameOptions): GameHandle {
     }
   };
   const onKeyUp = (e: KeyboardEvent): void => {
-    const k = keyOf(e.key);
+    const k = keyOf(e);
     if (k) keys.delete(k);
   };
   const onBlur = (): void => keys.clear();
