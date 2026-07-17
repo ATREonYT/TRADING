@@ -57,7 +57,12 @@ export default function BoothCard({
         className="flex items-center gap-2 rounded-t-md px-4 py-2"
         style={{ backgroundColor: s.booth.banner }}
       >
-        <PixelGlyph glyph={s.booth.glyph} color="#F2EFE7" size={16} />
+        {s.booth.logo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={s.booth.logo} alt="" aria-hidden="true" width={16} height={16} className="pixelated" />
+        ) : (
+          <PixelGlyph glyph={s.booth.glyph} color="#F2EFE7" size={16} />
+        )}
         <span className="micro truncate text-paper">{s.booth.sign}</span>
         <button
           type="button"

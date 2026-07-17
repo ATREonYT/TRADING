@@ -5,6 +5,7 @@ import { TIER_ORDER, type GlyphId, type SubTier } from "@/lib/types";
 import TierTag, { TIER_LABEL, TIER_PRICE } from "@/components/TierTag";
 import PixelGlyph from "@/components/PixelGlyph";
 import HeroScene from "@/components/HeroScene";
+import Reveal from "@/components/Reveal";
 import FloorThumb from "@/components/FloorThumb";
 
 function money(n: number): string {
@@ -104,7 +105,7 @@ export default function LandingPage() {
 
       {/* how it works */}
       <section aria-labelledby="how-heading" className="border-b border-line bg-panel">
-        <div className="mx-auto w-full max-w-5xl px-4 py-14 sm:py-16">
+        <Reveal className="mx-auto w-full max-w-5xl px-4 py-14 sm:py-16">
           <h2 id="how-heading" className="font-display text-2xl sm:text-3xl">
             How it works
           </h2>
@@ -122,12 +123,12 @@ export default function LandingPage() {
               </li>
             ))}
           </ol>
-        </div>
+        </Reveal>
       </section>
 
       {/* the map of the site — four surfaces, one sentence each */}
       <section aria-labelledby="around-heading" className="border-b border-line">
-        <div className="mx-auto w-full max-w-5xl px-4 py-14 sm:py-16">
+        <Reveal className="mx-auto w-full max-w-5xl px-4 py-14 sm:py-16">
           <h2 id="around-heading" className="font-display text-2xl sm:text-3xl">
             Find your way around
           </h2>
@@ -184,12 +185,12 @@ export default function LandingPage() {
               </Link>
             ))}
           </div>
-        </div>
+        </Reveal>
       </section>
 
       {/* floors */}
       <section aria-labelledby="floors-heading" className="border-b border-line">
-        <div className="mx-auto w-full max-w-5xl px-4 py-14 sm:py-16">
+        <Reveal className="mx-auto w-full max-w-5xl px-4 py-14 sm:py-16">
           <div className="flex items-baseline justify-between gap-4">
             <h2 id="floors-heading" className="font-display text-2xl sm:text-3xl">
               The floors
@@ -244,12 +245,12 @@ export default function LandingPage() {
               );
             })}
           </div>
-        </div>
+        </Reveal>
       </section>
 
       {/* rank ladder */}
       <section aria-labelledby="ranks-heading" className="border-b border-line bg-panel">
-        <div className="mx-auto w-full max-w-5xl px-4 py-14 sm:py-16">
+        <Reveal className="mx-auto w-full max-w-5xl px-4 py-14 sm:py-16">
           <h2 id="ranks-heading" className="font-display text-2xl sm:text-3xl">
             The rank ladder
           </h2>
@@ -307,12 +308,12 @@ export default function LandingPage() {
               </tbody>
             </table>
           </div>
-        </div>
+        </Reveal>
       </section>
 
       {/* pricing */}
       <section aria-labelledby="pricing-heading" className="border-b border-line">
-        <div className="mx-auto w-full max-w-5xl px-4 py-14 sm:py-16">
+        <Reveal className="mx-auto w-full max-w-5xl px-4 py-14 sm:py-16">
           <div className="flex flex-wrap items-baseline gap-3">
             <h2 id="pricing-heading" className="font-display text-2xl sm:text-3xl">
               Membership
@@ -365,7 +366,7 @@ export default function LandingPage() {
               );
             })}
           </div>
-        </div>
+        </Reveal>
       </section>
 
       {/* final CTA */}

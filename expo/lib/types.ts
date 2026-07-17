@@ -91,6 +91,11 @@ export interface BoothTheme {
   glyph: GlyphId;
   /** Carpet treatment; absent = "solid" (all seed booths). */
   pattern?: CarpetPattern;
+  /**
+   * Custom banner icon: a tiny data-URL PNG (uploads are downscaled to 16x16
+   * client-side, capped at ~8KB). Replaces the glyph when present.
+   */
+  logo?: string;
 }
 
 export interface DialogueScript {

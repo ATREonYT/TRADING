@@ -448,6 +448,13 @@ function sanitizeClaim(claim) {
         sign: sanitizeStr(booth.sign, 12) || name.slice(0, 12).toUpperCase(),
         glyph: GLYPHS.has(booth.glyph) ? booth.glyph : "star",
         pattern: PATTERNS.has(booth.pattern) ? booth.pattern : "solid",
+        // custom banner icon: tiny data-URL PNG, downscaled client-side
+        logo:
+          typeof booth.logo === "string" &&
+          booth.logo.startsWith("data:image/png;base64,") &&
+          booth.logo.length <= 8000
+            ? booth.logo
+            : undefined,
       },
     },
   };

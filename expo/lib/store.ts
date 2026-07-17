@@ -155,6 +155,11 @@ function looksLikeConnection(v: unknown): v is Connection {
 const GLYPHS = ["bolt", "leaf", "coin", "chip", "flask", "rocket", "heart", "cube", "wave", "star"] as const;
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
+/** Tiny data-URL PNG for a custom booth logo (uploads downscale to 16x16). */
+export function isValidLogo(v: unknown): v is string {
+  return typeof v === "string" && v.startsWith("data:image/png;base64,") && v.length <= 8000;
+}
+
 /** Clamp an untrusted value to an integer palette index in [0, max]. */
 function lookIndex(v: unknown, max: number): number {
   const n = Math.trunc(numOr(v, 0));
@@ -239,7 +244,13 @@ function sanitize(raw: unknown): AppState {
     const s = r.myStartup;
     base.myStartup = {
       ...s,
-      booth: { ...s.booth, sign: s.booth.sign.slice(0, 12) },
+      booth: {
+        ...s.booth,
+        sign: s.booth.sign.slice(0, 12),
+        logo: isValidLogo((s.booth as { logo?: unknown }).logo)
+          ? (s.booth as { logo?: string }).logo
+          : undefined,
+      },
       founderLook: sanitizeLook((s as unknown as Record<string, unknown>).founderLook),
       goalProgress: clamp01(numOr(s.goalProgress, 0)),
       verifiedRevenue: Math.max(0, numOr(s.verifiedRevenue, 0)),

@@ -21,6 +21,8 @@ export interface BoothPreviewProps {
   sign: string;
   glyph: GlyphId;
   pattern: CarpetPattern;
+  /** Custom banner icon (tiny data-URL PNG). Replaces the glyph when set. */
+  logo?: string;
   founderLook: AvatarLook;
   /** Hall floor colors behind the stand (defaults: Main Hall). */
   floorA?: string;
@@ -33,12 +35,14 @@ export default function BoothPreview({
   sign,
   glyph,
   pattern,
+  logo,
   founderLook,
   floorA = "#D8D2C4",
   floorB = "#D1CABA",
 }: BoothPreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bankRef = useRef<SpriteBank | null>(null);
+  const cleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -101,7 +105,23 @@ export default function BoothPreview({
     ctx.strokeStyle = dark;
     ctx.lineWidth = 2;
     ctx.strokeRect(bx + 4, syPx - 7, 4 * TILE - 8, TILE + 2);
-    drawGlyph(ctx, glyph, bx + 10, syPx + 1, 14, fg);
+    if (logo) {
+      // data-URL decode is async; guard so a stale load never paints over a
+      // newer render of this effect
+      let stale = false;
+      const img = new Image();
+      img.onload = () => {
+        if (stale) return;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(img, bx + 8, syPx, 16, 16);
+      };
+      img.src = logo;
+      cleanupRef.current = () => {
+        stale = true;
+      };
+    } else {
+      drawGlyph(ctx, glyph, bx + 10, syPx + 1, 14, fg);
+    }
     ctx.fillStyle = fg;
     ctx.font = "700 9px ui-monospace, SFMono-Regular, Menlo, monospace";
     ctx.textAlign = "center";
@@ -133,7 +153,12 @@ export default function BoothPreview({
     ctx.strokeStyle = "#D9D2C2";
     ctx.lineWidth = 1;
     ctx.strokeRect(bx + 2 * TILE + 6.5, y0 + 2.5, 13, 8);
-  }, [carpet, banner, sign, glyph, pattern, founderLook, floorA, floorB]);
+
+    return () => {
+      cleanupRef.current?.();
+      cleanupRef.current = null;
+    };
+  }, [carpet, banner, sign, glyph, pattern, logo, founderLook, floorA, floorB]);
 
   return (
     <canvas

@@ -77,9 +77,31 @@
     }
   }
 
-  /* Route-level enter (app/template.tsx remounts this per navigation). */
+  /* Route-level enter (app/template.tsx remounts this per navigation).
+     OPACITY ONLY — a transform here (even translateY(0) retained by
+     fill-mode) becomes the containing block for position:fixed descendants
+     and collapses the floor page's fixed-fullscreen game. Learned the hard way. */
+  @keyframes fade-only {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
   .page-enter {
-    animation: fade-up 260ms ease-out both;
+    animation: fade-only 220ms ease-out both;
+  }
+
+  /* Scroll-reveal for landing sections (driven by components/Reveal.tsx). */
+  .reveal {
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 480ms ease-out, transform 480ms ease-out;
+  }
+  .reveal.reveal-in {
+    opacity: 1;
+    transform: none;
   }
 
   /* Panel/card enter — booth cards, request popups, chat panes, quest list. */
@@ -98,6 +120,12 @@
     .page-enter,
     .anim-in {
       animation: none;
+    }
+    .reveal,
+    .reveal.reveal-in {
+      opacity: 1;
+      transform: none;
+      transition: none;
     }
   }
 }

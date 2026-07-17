@@ -90,6 +90,19 @@ const ACCENT = "#D9480F";
 
 const T = TILE;
 
+/** Uploaded booth logos (tiny data-URL PNGs), cached as decoded images. */
+const logoCache = new Map<string, HTMLImageElement>();
+function logoImage(dataUrl: string): HTMLImageElement | null {
+  let img = logoCache.get(dataUrl);
+  if (!img) {
+    if (typeof Image === "undefined") return null; // SSR guard
+    img = new Image();
+    img.src = dataUrl;
+    logoCache.set(dataUrl, img);
+  }
+  return img.complete && img.naturalWidth > 0 ? img : null;
+}
+
 
 // ---------- builder ----------
 
@@ -364,7 +377,9 @@ function bannerDrawable(b: BoothInstance & { startup: Startup }): Drawable {
       ctx.strokeStyle = dark;
       ctx.lineWidth = 2;
       ctx.strokeRect(bx + 4, by - 7, 4 * T - 8, T + 2);
-      drawGlyph(ctx, glyph, bx + 10, by + 1, 14, fg);
+      const logo = th.logo ? logoImage(th.logo) : null;
+      if (logo) ctx.drawImage(logo, bx + 8, by, 16, 16);
+      else drawGlyph(ctx, glyph, bx + 10, by + 1, 14, fg);
       ctx.fillStyle = fg;
       ctx.font = "700 9px ui-monospace, SFMono-Regular, Menlo, monospace";
       ctx.textAlign = "center";

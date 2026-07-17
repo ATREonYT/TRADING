@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAppState } from "@/lib/store";
+import { isValidLogo, useAppState } from "@/lib/store";
 import { RANKS, rankFor } from "@/lib/ranks";
 import { FLOORS } from "@/lib/data/floors";
 import { earnedTitles, questStates } from "@/lib/data/quests";
@@ -102,6 +102,7 @@ interface BoothForm {
   sign: string;
   glyph: GlyphId;
   pattern: CarpetPattern;
+  logo?: string;
 }
 
 const EMPTY_FORM: BoothForm = {
@@ -131,6 +132,7 @@ function formFrom(s: Startup): BoothForm {
     sign: s.booth.sign,
     glyph: s.booth.glyph,
     pattern: s.booth.pattern ?? "solid",
+    logo: s.booth.logo,
   };
 }
 
@@ -248,6 +250,7 @@ export default function ProfilePage() {
         sign: form.sign.trim().slice(0, 12) || form.name.trim().slice(0, 12),
         glyph: form.glyph,
         pattern: form.pattern,
+        logo: form.logo,
       },
     };
     actions.saveMyStartup(startup);
@@ -266,6 +269,43 @@ export default function ProfilePage() {
       glyph: pick(GLYPH_IDS),
       pattern: pick(PATTERNS).id,
     }));
+  };
+
+  const onLogoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const c = document.createElement("canvas");
+      c.width = 16;
+      c.height = 16;
+      const ctx = c.getContext("2d");
+      if (!ctx) return;
+      // cover-crop the largest centered square, then shrink to banner size
+      const side = Math.min(img.naturalWidth, img.naturalHeight);
+      const sx = (img.naturalWidth - side) / 2;
+      const sy = (img.naturalHeight - side) / 2;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, sx, sy, side, side, 0, 0, 16, 16);
+      const data = c.toDataURL("image/png");
+      if (!isValidLogo(data)) {
+        setToast({
+          id: Date.now(),
+          text: "That image would not compress down. Try a simpler one.",
+        });
+        return;
+      }
+      set("logo", data);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      setToast({ id: Date.now(), text: "Could not read that image file." });
+    };
+    img.src = url;
   };
 
   const verify = () => {
@@ -521,7 +561,46 @@ export default function ProfilePage() {
                 />
               </div>
               <div>
-                <span className="micro mb-1.5 block text-muted">Glyph</span>
+                <span className="micro mb-1.5 block text-muted">Banner icon</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  {form.logo && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={form.logo}
+                      alt="Your uploaded banner icon"
+                      width={32}
+                      height={32}
+                      className="pixelated rounded-sm border border-accent"
+                    />
+                  )}
+                  <label className="cursor-pointer rounded-md border border-line px-3 py-1.5 text-xs text-muted hover:border-ink hover:text-ink">
+                    {form.logo ? "Replace logo" : "Upload your own logo"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={onLogoFile}
+                      className="sr-only"
+                    />
+                  </label>
+                  {form.logo && (
+                    <button
+                      type="button"
+                      onClick={() => set("logo", undefined)}
+                      className="rounded-md border border-line px-3 py-1.5 text-xs text-muted hover:border-ink hover:text-ink"
+                    >
+                      Remove — use a glyph
+                    </button>
+                  )}
+                </div>
+                <p className="mt-1.5 text-xs text-muted">
+                  Any image works — it gets shrunk to a 16×16 pixel mark, like
+                  everything else on the floor.
+                </p>
+              </div>
+              <div className={form.logo ? "opacity-50" : undefined}>
+                <span className="micro mb-1.5 block text-muted">
+                  Glyph{form.logo ? " (unused while a logo is set)" : ""}
+                </span>
                 <div className="flex flex-wrap gap-1.5">
                   {GLYPH_IDS.map((g) => (
                     <button
@@ -615,6 +694,7 @@ export default function ProfilePage() {
               sign={form.sign.trim() || form.name.trim().slice(0, 12)}
               glyph={form.glyph}
               pattern={form.pattern}
+              logo={form.logo}
               founderLook={state.profile.look}
             />
             <p className="mt-2 text-xs leading-relaxed text-muted">
