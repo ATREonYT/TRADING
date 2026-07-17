@@ -6,6 +6,7 @@
  * Connections page and as the on-floor popup.
  */
 
+import { useEffect, useRef } from "react";
 import type { ConnectRequest } from "@/lib/types";
 import RankBadge from "@/components/RankBadge";
 
@@ -20,9 +21,21 @@ export default function RequestCard({
   compact?: boolean;
 }) {
   const c = req.from;
+  const ref = useRef<HTMLDivElement>(null);
+
+  // The floor popup appears mid-screen unprompted — move focus into it so
+  // keyboard and screen-reader users find Accept/Decline without hunting.
+  useEffect(() => {
+    if (compact) ref.current?.focus();
+  }, [compact, req.from.id]);
+
   return (
     <div
-      className={`panel anim-in pointer-events-auto w-[300px] max-w-[calc(100vw-24px)] p-3 shadow-card ${
+      ref={ref}
+      tabIndex={-1}
+      role={compact ? "dialog" : undefined}
+      aria-label={compact ? `Connection request from ${c.name}` : undefined}
+      className={`panel anim-in pointer-events-auto w-[300px] max-w-[calc(100vw-24px)] p-3 shadow-card outline-none ${
         compact ? "border-l-2 border-l-accent" : ""
       }`}
     >
@@ -30,7 +43,7 @@ export default function RequestCard({
       <div className="flex items-baseline gap-2">
         <p className="font-display text-base leading-tight">{c.name}</p>
         {c.title && (
-          <span className="micro rounded-sm border border-gold/50 px-1 py-px text-gold">
+          <span className="micro rounded-sm border border-gold/50 px-1 py-px text-gold-deep">
             {c.title}
           </span>
         )}

@@ -11,7 +11,9 @@ import Link from "next/link";
 import { STARTUPS } from "@/lib/data/startups";
 import { FLOORS } from "@/lib/data/floors";
 import { RANKS, rankFor } from "@/lib/ranks";
-import type { FloorDef, RankId, Startup } from "@/lib/types";
+import { useAppState } from "@/lib/store";
+import { TIER_ORDER, type FloorDef, type RankId, type Startup } from "@/lib/types";
+import { TIER_LABEL } from "@/components/TierTag";
 import RankBadge from "@/components/RankBadge";
 import TierTag from "@/components/TierTag";
 import { usePresence } from "@/components/usePresence";
@@ -45,6 +47,7 @@ export default function DirectoryPage() {
   const [seeking, setSeeking] = useState(false);
   const [minRank, setMinRank] = useState<RankId | null>(null);
   const presence = usePresence();
+  const [state] = useAppState();
 
   const results: Startup[] = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -180,14 +183,25 @@ export default function DirectoryPage() {
                       <span>{floor.name}</span>
                       <TierTag tier={floor.tier} />
                     </span>
-                    <Link
-                      // ?booth deep link: the floor page auto-walks you from
-                      // the door to this startup's stand.
-                      href={`/floor/${floor.id}?booth=${encodeURIComponent(s.id)}`}
-                      className="rounded-md border border-ink px-3 py-2 text-sm hover:bg-panel"
-                    >
-                      Walk there
-                    </Link>
+                    {TIER_ORDER[state.sub] >= TIER_ORDER[floor.tier] ? (
+                      <Link
+                        // ?booth deep link: the floor page auto-walks you from
+                        // the door to this startup's stand.
+                        href={`/floor/${floor.id}?booth=${encodeURIComponent(s.id)}`}
+                        className="rounded-md border border-ink px-3 py-2 text-sm hover:bg-panel"
+                      >
+                        Walk there
+                      </Link>
+                    ) : (
+                      <Link
+                        // honest label: this floor is behind the paywall for
+                        // the current tier — no surprise gate after the click
+                        href="/profile#membership"
+                        className="rounded-md border border-line px-3 py-2 text-sm text-muted hover:border-ink hover:text-ink"
+                      >
+                        Needs {TIER_LABEL[floor.tier]}
+                      </Link>
+                    )}
                   </div>
                 )}
               </li>

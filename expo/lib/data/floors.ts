@@ -63,7 +63,7 @@ export const FLOORS: FloorDef[] = [
     // x = 3 / 11 / 19 -> rightmost zone ends at col 22, walls at 0 and 25.
     id: "indie-alley",
     name: "Indie Alley",
-    tagline: "Folding tables, real users, no adult supervision. One spot has your name on it.",
+    tagline: "Folding tables, real users, no adult supervision. One spot stays open for newcomers.",
     tier: "free",
     width: 26,
     height: 26,

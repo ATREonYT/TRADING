@@ -47,7 +47,7 @@
  */
 
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
-import { readFileSync, renameSync, writeFileSync } from "node:fs";
+import { closeSync, fsyncSync, openSync, readFileSync, renameSync, writeSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -65,6 +65,8 @@ const MOVES_PER_SEC = 20; // moves beyond this per client per second are dropped
 const EMOTES_PER_SEC = 3; // emotes beyond this per client per second are dropped
 const SIGNS_PER_SEC = 2; // guestbook signs beyond this per client per second are dropped
 const CHATS_PER_SEC = 5; // chat frames beyond this per client per second are dropped
+const FRAMES_PER_SEC = 40; // total ws frames per client per second, all types
+const BOOTH_SETS_PER_10S = 4; // claim + denial rollback fit; scripted spam doesn't
 const GUESTBOOK_KEEP = 50; // entries per guestbook, newest first
 const ACTIVITY_KEEP = 20; // ticker items per floor, oldest first
 const MAX_KEYS_PER_FLOOR = 128; // distinct guestbook keys per floor
@@ -121,18 +123,65 @@ const tokens = new Map();
 const MAX_ACCOUNTS = 5000;
 const ACCT_PREFIX = "acct_";
 
-function hashPassword(password, salt) {
-  return scryptSync(password, salt, 32);
+// Cost params are stored per account so they can be raised later without
+// breaking existing logins (older accounts keep the params they were hashed with).
+const SCRYPT = { N: 16384, r: 8, p: 1 };
+
+function hashPassword(password, salt, kdf = SCRYPT) {
+  return scryptSync(password, salt, 32, { N: kdf.N, r: kdf.r, p: kdf.p, maxmem: 64 * 1024 * 1024 });
 }
+
+const TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days, refreshed on use
 
 function verifyToken(token, profileId) {
   if (typeof token !== "string" || !token) return false;
-  return tokens.get(token) === profileId;
+  const entry = tokens.get(token);
+  if (!entry || entry.id !== profileId) return false;
+  if (Date.now() - entry.ts > TOKEN_TTL_MS) {
+    tokens.delete(token);
+    scheduleSave();
+    return false;
+  }
+  entry.ts = Date.now();
+  return true;
 }
 
-/** True when this id claims to be an account but the token doesn't back it. */
-function isImpersonation(profileId, token) {
-  return typeof profileId === "string" && profileId.startsWith(ACCT_PREFIX) && !verifyToken(token, profileId);
+/**
+ * guestSecrets: profileId -> { secret, ts } — a browser-held secret that binds
+ * a guest id to whoever used it first. Guest ids travel to peers (booth_set
+ * ownerId, calling cards, DM envelopes), so without this anyone who saw your
+ * id could read your inbox or repossess your stand. First use binds; every
+ * later join / social call must present the same secret. Accounts (acct_*)
+ * use bearer tokens instead and never touch this map.
+ */
+const guestSecrets = new Map();
+const MAX_GUEST_SECRETS = 20000;
+const GUEST_SECRET_TTL_MS = 90 * 24 * 60 * 60 * 1000; // idle guests age out
+
+/**
+ * One identity gate for every claimed profile id.
+ * acct_ ids: token must back them. Guest ids: first caller with a secret
+ * binds it; a bound id then requires the matching secret. A bound id with a
+ * missing/wrong secret is an impersonation attempt.
+ */
+function verifyIdentity(profileId, token, gs) {
+  if (typeof profileId !== "string" || !profileId) return false;
+  if (profileId.startsWith(ACCT_PREFIX)) return verifyToken(token, profileId);
+  const supplied = typeof gs === "string" && gs.length >= 16 && gs.length <= 64 ? gs : null;
+  const bound = guestSecrets.get(profileId);
+  if (!bound) {
+    if (supplied && guestSecrets.size < MAX_GUEST_SECRETS) {
+      guestSecrets.set(profileId, { secret: supplied, ts: Date.now() });
+      scheduleSave();
+    }
+    return true; // unbound guest — first use binds (or legacy client, no secret)
+  }
+  if (!supplied) return false;
+  const a = Buffer.from(bound.secret);
+  const b = Buffer.from(supplied);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return false;
+  bound.ts = Date.now();
+  return true;
 }
 
 /**
@@ -214,7 +263,15 @@ function loadData() {
     parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") throw new Error("not an object");
   } catch {
-    console.warn("[data] floor-data.json is corrupt — starting with empty guestbooks and activity");
+    // Move the bad file aside instead of leaving it to be overwritten by the
+    // next save — a truncated write must stay recoverable by hand.
+    const aside = `${DATA_FILE}.corrupt-${Date.now()}`;
+    try {
+      renameSync(DATA_FILE, aside);
+      console.warn(`[data] floor-data.json is corrupt — moved aside to ${aside}, starting empty`);
+    } catch {
+      console.warn("[data] floor-data.json is corrupt and could not be moved aside — starting empty");
+    }
     return;
   }
 
@@ -263,12 +320,33 @@ function loadData() {
     for (const [nameLower, a] of Object.entries(parsed.accounts)) {
       if (!a || typeof a !== "object" || accounts.size >= MAX_ACCOUNTS) continue;
       if (typeof a.id !== "string" || typeof a.name !== "string" || typeof a.salt !== "string" || typeof a.hash !== "string") continue;
-      accounts.set(nameLower.slice(0, MAX_NAME_LEN), { id: a.id, name: a.name, salt: a.salt, hash: a.hash });
+      const kdf =
+        a.kdf && Number.isInteger(a.kdf.N) && Number.isInteger(a.kdf.r) && Number.isInteger(a.kdf.p)
+          ? { N: a.kdf.N, r: a.kdf.r, p: a.kdf.p }
+          : { ...SCRYPT };
+      accounts.set(nameLower.slice(0, MAX_NAME_LEN), { id: a.id, name: a.name, salt: a.salt, hash: a.hash, kdf });
     }
   }
   if (parsed.tokens && typeof parsed.tokens === "object") {
-    for (const [tok, id] of Object.entries(parsed.tokens)) {
-      if (typeof id === "string" && tok.length === 64) tokens.set(tok, id);
+    const cutoff = Date.now() - TOKEN_TTL_MS;
+    for (const [tok, v] of Object.entries(parsed.tokens)) {
+      if (tok.length !== 64) continue;
+      // current format { id, ts }; pre-TTL files stored a bare id string
+      if (v && typeof v === "object" && typeof v.id === "string" && typeof v.ts === "number") {
+        if (v.ts > cutoff) tokens.set(tok, { id: v.id, ts: v.ts });
+      } else if (typeof v === "string") {
+        tokens.set(tok, { id: v, ts: Date.now() });
+      }
+    }
+  }
+
+  if (parsed.guestSecrets && typeof parsed.guestSecrets === "object") {
+    const cutoff = Date.now() - GUEST_SECRET_TTL_MS;
+    for (const [pid, v] of Object.entries(parsed.guestSecrets)) {
+      if (guestSecrets.size >= MAX_GUEST_SECRETS) break;
+      if (v && typeof v === "object" && typeof v.secret === "string" && typeof v.ts === "number" && v.ts > cutoff) {
+        guestSecrets.set(pid.slice(0, MAX_ID_LEN), { secret: v.secret.slice(0, 64), ts: v.ts });
+      }
     }
   }
 
@@ -343,11 +421,20 @@ function saveNow() {
     dms: Object.fromEntries(dms),
     accounts: Object.fromEntries(accounts),
     tokens: Object.fromEntries(tokens),
+    guestSecrets: Object.fromEntries(guestSecrets),
   };
   const tmp = `${DATA_FILE}.tmp`;
   try {
     // Atomic on POSIX: readers only ever see the old or the new full file.
-    writeFileSync(tmp, JSON.stringify(data));
+    // fsync before rename, or a power loss can leave the rename pointing at
+    // an unflushed (empty) file on some filesystems.
+    const fd = openSync(tmp, "w");
+    try {
+      writeSync(fd, JSON.stringify(data));
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
     renameSync(tmp, DATA_FILE);
   } catch (err) {
     console.warn(`[data] persist failed: ${err.message}`);
@@ -395,13 +482,25 @@ function sanitizeMove(s) {
   };
 }
 
+// Control chars, zero-widths, and bidi overrides (U+202E and friends) enable
+// display spoofing in names, chat, and the ticker — strip them everywhere.
+// Newlines are preserved only where multi-line input is legit (sanitizeStr).
+const CONTROL_RE = /[\u0000-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g;
+
+function stripControl(s) {
+  return s.replace(CONTROL_RE, "");
+}
+
 function sanitizeName(name) {
-  const trimmed = typeof name === "string" ? name.trim().slice(0, MAX_NAME_LEN) : "";
+  const trimmed =
+    typeof name === "string" ? stripControl(name).replace(/\s+/g, " ").trim().slice(0, MAX_NAME_LEN) : "";
   return trimmed || "guest";
 }
 
 function sanitizeText(text) {
-  return typeof text === "string" ? text.trim().slice(0, MAX_TEXT_LEN) : "";
+  return typeof text === "string"
+    ? stripControl(text).replace(/\s+/g, " ").trim().slice(0, MAX_TEXT_LEN)
+    : "";
 }
 
 const GLYPHS = new Set(["bolt", "leaf", "coin", "chip", "flask", "rocket", "heart", "cube", "wave", "star"]);
@@ -410,7 +509,7 @@ const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 const MAX_SPOT_INDEX = 63;
 
 function sanitizeStr(v, max, fallback = "") {
-  return typeof v === "string" ? v.trim().slice(0, max) : fallback;
+  return typeof v === "string" ? stripControl(v).trim().slice(0, max) : fallback;
 }
 
 /**
@@ -518,7 +617,27 @@ function pruneStands() {
     if (byOwner.size === 0) stands.delete(floorId);
   }
 }
+/** Hourly sweep: expired bearer tokens and long-idle guest secrets. */
+function pruneCredentials() {
+  const now = Date.now();
+  let changed = false;
+  for (const [tok, v] of tokens) {
+    if (now - v.ts > TOKEN_TTL_MS) {
+      tokens.delete(tok);
+      changed = true;
+    }
+  }
+  for (const [pid, v] of guestSecrets) {
+    if (now - v.ts > GUEST_SECRET_TTL_MS) {
+      guestSecrets.delete(pid);
+      changed = true;
+    }
+  }
+  if (changed) scheduleSave();
+}
+
 setInterval(pruneStands, 60 * 60 * 1000).unref();
+setInterval(pruneCredentials, 60 * 60 * 1000).unref();
 
 loadData();
 
@@ -647,7 +766,13 @@ function authRateLimited(req) {
   if (!a || now - a.windowStart >= 60_000) {
     a = { windowStart: now, count: 0 };
     authAttempts.set(ip, a);
-    if (authAttempts.size > 1000) authAttempts.clear(); // crude but bounded
+    if (authAttempts.size > 1000) {
+      // evict expired windows only — a blanket clear() would let an attacker
+      // reset everyone's counters by cycling 1000 IPs
+      for (const [k, v] of authAttempts) {
+        if (now - v.windowStart >= 60_000) authAttempts.delete(k);
+      }
+    }
   }
   return ++a.count > 10;
 }
@@ -689,10 +814,11 @@ async function handleAuthPost(req, res, pathname) {
       name,
       salt,
       hash: hashPassword(password, salt).toString("hex"),
+      kdf: { ...SCRYPT },
     };
     accounts.set(key, acct);
     const token = randomBytes(32).toString("hex");
-    tokens.set(token, acct.id);
+    tokens.set(token, { id: acct.id, ts: Date.now() });
     scheduleSave();
     console.log(`[auth] register name="${name}" id=${acct.id}`);
     sendJson(res, { id: acct.id, name: acct.name, token });
@@ -706,13 +832,13 @@ async function handleAuthPost(req, res, pathname) {
     // Constant-shape compare either way, so login can't probe for names.
     const salt = acct?.salt ?? "0".repeat(32);
     const expected = Buffer.from(acct?.hash ?? "0".repeat(64), "hex");
-    const got = hashPassword(password, salt);
+    const got = hashPassword(password, salt, acct?.kdf ?? SCRYPT);
     if (!acct || expected.length !== got.length || !timingSafeEqual(expected, got)) {
       sendJson(res, { error: "wrong name or password" });
       return;
     }
     const token = randomBytes(32).toString("hex");
-    tokens.set(token, acct.id);
+    tokens.set(token, { id: acct.id, ts: Date.now() });
     scheduleSave();
     sendJson(res, { id: acct.id, name: acct.name, token });
     return;
@@ -736,10 +862,10 @@ async function handleSocialPost(req, res, pathname) {
     return;
   }
 
-  // Account ids must be backed by a token; guests pass through untouched.
+  // Account ids must be backed by a token; bound guest ids by their secret.
   const actor =
     pathname === "/social/request" ? body.card?.id : pathname === "/social/dm" ? body.from : body.me;
-  if (isImpersonation(actor, body.token)) {
+  if (!verifyIdentity(actor, body.token, body.gs)) {
     notFound(res);
     return;
   }
@@ -879,7 +1005,7 @@ const server = createServer((req, res) => {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-FF-GS",
       "Access-Control-Max-Age": "86400",
     });
     res.end();
@@ -888,7 +1014,15 @@ const server = createServer((req, res) => {
 
   if (req.method === "GET" && url.pathname === "/social") {
     const me = (url.searchParams.get("me") || "").slice(0, MAX_ID_LEN);
-    if (!me || isImpersonation(me, url.searchParams.get("token") ?? "")) {
+    // Bearer material belongs in headers (query strings leak via logs and
+    // Referer); the query params remain as a fallback for older clients.
+    const authHeader = typeof req.headers.authorization === "string" ? req.headers.authorization : "";
+    const token = authHeader.startsWith("Bearer ")
+      ? authHeader.slice(7)
+      : (url.searchParams.get("token") ?? "");
+    const gsHeader = req.headers["x-ff-gs"];
+    const gs = typeof gsHeader === "string" && gsHeader ? gsHeader : (url.searchParams.get("gs") ?? "");
+    if (!me || !verifyIdentity(me, token, gs)) {
       notFound(res);
       return;
     }
@@ -989,15 +1123,26 @@ wss.on("connection", (ws, req) => {
   let chatWindowStart = 0;
   let chatsInWindow = 0;
 
+  // global frame limiting: every message type counts, so unknown-type floods
+  // and verbs without their own limiter can't burn CPU / broadcast bandwidth
+  let frameWindowStart = 0;
+  let framesInWindow = 0;
+
+  // booth_set limiting: a claim plus its denial-rollback re-claim is 2 frames
+  // in quick succession, so allow a small burst over a longer window
+  let boothWindowStart = 0;
+  let boothSetsInWindow = 0;
+
   function handleJoin(msg) {
     const p = msg.player;
     let rawId =
       typeof p?.id === "string" && p.id.trim()
         ? p.id.trim().slice(0, MAX_ID_LEN)
         : randomUUID();
-    // An account id without its token is an impersonation attempt — the
+    // An id that fails the identity gate (account without its token, or a
+    // bound guest id without its secret) is an impersonation attempt — the
     // connection still works, but as an anonymous guest.
-    if (isImpersonation(rawId, msg.token)) {
+    if (!verifyIdentity(rawId, msg.token, msg.gs)) {
       console.log(`[auth] rejected impersonation of ${rawId} — downgraded to guest`);
       rawId = randomUUID();
     }
@@ -1028,8 +1173,13 @@ wss.on("connection", (ws, req) => {
       socketsByProfile.set(rawId, socks);
     }
     socks.add(ws);
-    const soc = socialFor(rawId);
-    if (soc) soc.name = name;
+    // Keep the display name fresh for inboxes — but not from "__inbox" joins,
+    // whose placeholder name ("inbox") would overwrite the real one that DM
+    // recipients see.
+    if (floorId !== "__inbox") {
+      const soc = socialFor(rawId);
+      if (soc) soc.name = name;
+    }
 
     const others = [...room.values()].filter((c) => c.id !== id).map(asRemotePlayer);
     send(ws, {
@@ -1104,7 +1254,11 @@ wss.on("connection", (ws, req) => {
       byOwner = new Map();
       stands.set(floorId, byOwner);
     }
-    if (!byOwner.has(client.rawId) && byOwner.size >= MAX_STANDS_PER_FLOOR) return;
+    if (!byOwner.has(client.rawId) && byOwner.size >= MAX_STANDS_PER_FLOOR) {
+      // Tell the claimant, or their client keeps a ghost stand nobody else sees.
+      send(ws, { t: "booth_denied", spotIndex: claim.spotIndex });
+      return;
+    }
     byOwner.set(client.rawId, { claim, ownerName: client.name, lastSeen: Date.now() });
     scheduleSave();
     broadcast(
@@ -1239,6 +1393,16 @@ wss.on("connection", (ws, req) => {
     }
     if (!msg || typeof msg !== "object" || typeof msg.t !== "string") return;
 
+    const now = Date.now();
+    if (now - frameWindowStart >= 1000) {
+      frameWindowStart = now;
+      framesInWindow = 0;
+    }
+    if (++framesInWindow > FRAMES_PER_SEC) {
+      if (framesInWindow > FRAMES_PER_SEC * 5) ws.close(1008, "flood"); // gross abuse
+      return; // drop excess frames of every type silently
+    }
+
     if (!client) {
       if (msg.t === "join") handleJoin(msg);
       return; // anything before a valid join is ignored
@@ -1252,6 +1416,11 @@ wss.on("connection", (ws, req) => {
         handleChat(msg);
         break;
       case "booth_set":
+        if (now - boothWindowStart >= 10_000) {
+          boothWindowStart = now;
+          boothSetsInWindow = 0;
+        }
+        if (++boothSetsInWindow > BOOTH_SETS_PER_10S) break;
         handleBoothSet(msg);
         break;
       case "booth_clear":

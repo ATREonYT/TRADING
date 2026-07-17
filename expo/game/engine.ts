@@ -449,6 +449,9 @@ export function createGame(opts: GameOptions): GameHandle {
 
   const onPointerDown = (e: PointerEvent): void => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
+    // Gate EVERY step, not just walking — a stray tap while the chat input
+    // is focused must not switch DM tabs or swap the active booth card.
+    if (!inputEnabled) return;
     const rct = canvas.getBoundingClientRect();
     const wx = cam.x + (e.clientX - rct.left) / ZOOM;
     const wy = cam.y + (e.clientY - rct.top) / ZOOM;
@@ -474,7 +477,6 @@ export function createGame(opts: GameOptions): GameHandle {
     }
     // 3) anywhere else -> walk there (solid tiles resolve to the nearest
     //    reachable neighbor, so tapping a far booth walks you up to it)
-    if (!inputEnabled) return;
     startPathTo(tx, ty);
   };
 

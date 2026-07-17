@@ -15,7 +15,7 @@ export const TIER_PRICE: Record<SubTier, string> = {
 const STYLES: Record<SubTier, string> = {
   free: "border-line text-muted",
   pro: "border-accent/40 text-accent",
-  founder: "border-gold/50 text-gold",
+  founder: "border-gold/50 text-gold-deep",
 };
 
 /** Small uppercase letterspaced tier tag. Server-safe. */

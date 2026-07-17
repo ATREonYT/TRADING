@@ -53,6 +53,30 @@ export function tokenFor(profileId: string): string | undefined {
   return a && a.id === profileId ? a.token : undefined;
 }
 
+const GS_KEY = "founderfloor:gs";
+
+/**
+ * Browser-held guest secret: generated once, sent with every join and social
+ * call. The server binds it to your guest id on first use, so nobody who
+ * merely SAW your id (it travels to peers on stands, cards, and DMs) can read
+ * your inbox or repossess your stand. Accounts use bearer tokens instead,
+ * but sending this alongside is harmless.
+ */
+export function guestSecret(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const existing = window.localStorage.getItem(GS_KEY);
+    if (existing && existing.length >= 16) return existing;
+    const s = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) =>
+      b.toString(16).padStart(2, "0"),
+    ).join("");
+    window.localStorage.setItem(GS_KEY, s);
+    return s;
+  } catch {
+    return ""; // storage blocked — degrade to an unbound guest
+  }
+}
+
 async function authPost(
   path: string,
   body: unknown,

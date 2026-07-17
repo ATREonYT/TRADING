@@ -59,7 +59,19 @@ export default function ConnectionsPage() {
   const me = ready ? state.profile.id : "";
   const [inbox, refresh, reachable] = useInbox(me, 15_000);
   // Live pushes make the chat real-time; polling is just the safety net.
-  useSocialPush(me, () => refresh());
+  useSocialPush(me, (ev) => {
+    // Your outgoing request was accepted while you sat here — mirror the new
+    // mutual connection into the local store so quests and card counts see it.
+    if (ev.t === "connect_accept" && typeof ev.peerId === "string") {
+      actions.addConnection({
+        name: typeof ev.peerName === "string" ? ev.peerName : "founder",
+        founder: typeof ev.peerName === "string" ? ev.peerName : undefined,
+        floorId: "",
+        peerId: ev.peerId,
+      });
+    }
+    refresh();
+  });
 
   const activeMsgs = openThread ? inbox.threads[openThread] ?? [] : [];
   const activePeer = inbox.connections.find((c) => c.peerId === openThread);
@@ -79,6 +91,18 @@ export default function ConnectionsPage() {
   }, [seenTick, inbox]);
 
   const respond = async (peer: string, accept: boolean) => {
+    if (accept) {
+      const req = inbox.requests.find((r) => r.from.id === peer);
+      if (req) {
+        actions.addConnection({
+          startupId: req.from.startupName ? `claim:${peer}` : undefined,
+          name: req.from.startupName ?? req.from.name,
+          founder: req.from.name,
+          floorId: "",
+          peerId: peer,
+        });
+      }
+    }
     await respondToRequest(me, state.profile.name, peer, accept);
     refresh();
     setToast({
@@ -113,7 +137,9 @@ export default function ConnectionsPage() {
       <div className="flex items-baseline justify-between">
         <h1 className="font-display text-3xl">Connections</h1>
         {!reachable && (
-          <span className="text-xs text-muted">floor server offline — showing what's cached</span>
+          <span className="text-xs text-muted">
+            floor server offline — requests and chats will appear when it&rsquo;s back
+          </span>
         )}
       </div>
 

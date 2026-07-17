@@ -90,17 +90,62 @@ const ACCENT = "#D9480F";
 
 const T = TILE;
 
-/** Uploaded booth logos (tiny data-URL PNGs), cached as decoded images. */
+/**
+ * Uploaded booth logos (tiny data-URL PNGs), cached as decoded images.
+ * Bounded: keyed by the full data URL, so every logo edit is a new entry —
+ * without a cap a long session would hold every version ever seen.
+ */
 const logoCache = new Map<string, HTMLImageElement>();
+const LOGO_CACHE_MAX = 64;
 function logoImage(dataUrl: string): HTMLImageElement | null {
   let img = logoCache.get(dataUrl);
   if (!img) {
     if (typeof Image === "undefined") return null; // SSR guard
+    if (logoCache.size >= LOGO_CACHE_MAX) {
+      // evict the oldest half — cheap, and misses just re-decode a tiny PNG
+      let drop = LOGO_CACHE_MAX / 2;
+      for (const key of logoCache.keys()) {
+        if (drop-- <= 0) break;
+        logoCache.delete(key);
+      }
+    }
     img = new Image();
     img.src = dataUrl;
     logoCache.set(dataUrl, img);
   }
   return img.complete && img.naturalWidth > 0 ? img : null;
+}
+
+/**
+ * Is this boothSpots index open to player claims on this floor def?
+ * Seed startups fill spots in order, skipping reservedSpot — everything they
+ * cover is taken; the reserved spot and any leftovers are claimable. Used to
+ * drop stored claims that no longer match the floor (defs change between
+ * versions; a stale index would announce an invisible stand that still
+ * blocks arbitration for everyone else).
+ */
+export function isClaimableSpot(floor: FloorDef, idx: number): boolean {
+  if (!Number.isInteger(idx) || idx < 0 || idx >= floor.boothSpots.length) return false;
+  let assigned = 0;
+  for (let i = 0; i < floor.boothSpots.length && assigned < floor.startupIds.length; i++) {
+    if (i === floor.reservedSpot) continue;
+    if (i === idx) return false; // covered by a seed startup
+    assigned++;
+  }
+  return true;
+}
+
+/** The boothSpots index a seed startup renders at (skips reservedSpot). */
+export function seedSpotIndex(floor: FloorDef, startupId: string): number {
+  const order = floor.startupIds.indexOf(startupId);
+  if (order < 0) return -1;
+  let assigned = 0;
+  for (let i = 0; i < floor.boothSpots.length; i++) {
+    if (i === floor.reservedSpot) continue;
+    if (assigned === order) return i;
+    assigned++;
+  }
+  return -1;
 }
 
 

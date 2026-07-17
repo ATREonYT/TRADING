@@ -14,6 +14,9 @@ const config: Config = {
         "accent-soft": "#FBE9E0",
         verify: "#2B8A3E",
         gold: "#B08D2E",
+        // gold fails WCAG AA as small text on paper (2.7:1) — use this for
+        // gold TEXT, keep `gold` for dots, borders and fills
+        "gold-deep": "#7A611F",
       },
       fontFamily: {
         display: ["Iowan Old Style", "Palatino Linotype", "Palatino", "Georgia", "serif"],

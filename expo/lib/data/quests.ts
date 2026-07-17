@@ -37,7 +37,7 @@ export const QUESTS: QuestDef[] = [
   {
     id: "first-steps",
     title: "First steps",
-    blurb: "Finish the floor tour.",
+    blurb: "Finish (or skip) the floor tour.",
     goal: 1,
     unit: "tour",
     reward: { badge: "first-steps" },
@@ -46,7 +46,7 @@ export const QUESTS: QuestDef[] = [
   {
     id: "make-the-rounds",
     title: "Make the rounds",
-    blurb: "Talk to three different founders.",
+    blurb: "Chat with three different founders (say something — walking up is browsing).",
     goal: 3,
     unit: "founders",
     reward: { badge: "rounds", emote: "rocket" },

@@ -19,7 +19,7 @@ export default function RootLayout({
     <html lang="en">
       <body className="flex min-h-screen flex-col bg-paper text-ink">
         <header className="border-b border-line bg-panel">
-          <div className="mx-auto flex h-14 w-full max-w-5xl items-center gap-6 px-4">
+          <div className="mx-auto flex h-14 w-full max-w-5xl items-center gap-3 px-4 sm:gap-6">
             <Link
               href="/"
               className="flex items-center gap-2.5"
@@ -30,7 +30,12 @@ export default function RootLayout({
                 FounderFloor
               </span>
             </Link>
-            <nav aria-label="Main" className="ml-auto flex items-center gap-5">
+            {/* min-w-0 + overflow-x-auto: on narrow phones the nav scrolls
+                sideways instead of pushing links off the edge */}
+            <nav
+              aria-label="Main"
+              className="ml-auto flex min-w-0 items-center gap-3 overflow-x-auto whitespace-nowrap sm:gap-5"
+            >
               <Link
                 href="/lobby"
                 className="text-sm text-muted hover:text-ink hover:underline"
@@ -58,7 +63,12 @@ export default function RootLayout({
 
         <footer className="border-t border-line bg-panel">
           <div className="mx-auto flex w-full max-w-5xl flex-col gap-1 px-4 py-6 text-sm text-muted sm:flex-row sm:items-baseline sm:justify-between">
-            <p>Built by one person and a robot.</p>
+            <p>
+              Built by one person and a robot.{" "}
+              <Link href="/about" className="underline hover:text-ink">
+                About &amp; privacy
+              </Link>
+            </p>
             <p>Revenue ranks are verified &mdash; simulated in this build. Egos are not.</p>
           </div>
         </footer>

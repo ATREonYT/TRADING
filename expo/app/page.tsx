@@ -16,7 +16,7 @@ const STEPS: { title: string; body: string; glyph: GlyphId }[] = [
   {
     title: "Walk in",
     glyph: "bolt",
-    body: "Pick a name, pick a face, pick a floor. Arrow keys from there. No calendar invite, no badge scanner.",
+    body: "Pick a name, pick a face, pick a floor. Arrow keys — or just tap where you want to go. No calendar invite, no badge scanner.",
   },
   {
     title: "Talk to founders",
@@ -97,7 +97,7 @@ export default function LandingPage() {
           <div className="mt-10">
             <HeroScene />
             <p className="micro mt-3 text-muted">
-              Main Hall, ambient view. The real one takes arrow keys.
+              Main Hall, ambient view. The real one takes arrow keys or taps.
             </p>
           </div>
         </div>
@@ -235,7 +235,7 @@ export default function LandingPage() {
                     </p>
                     <p className="micro mt-3 text-muted">
                       {floor.boothSpots.length} booths
-                      {floor.reservedSpot !== undefined ? " · one reserved for you" : ""}
+                      {floor.reservedSpot !== undefined ? " · one left open for newcomers" : ""}
                       {locked
                         ? ` · requires ${TIER_LABEL[floor.tier]}, ${TIER_PRICE[floor.tier]}`
                         : ""}
@@ -357,7 +357,7 @@ export default function LandingPage() {
                     ))}
                   </ul>
                   <Link
-                    href="/profile"
+                    href="/profile#membership"
                     className="mt-5 rounded-md border border-ink px-4 py-2 text-center text-sm hover:bg-paper"
                   >
                     Choose {TIER_LABEL[tier]}

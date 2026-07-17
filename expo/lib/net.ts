@@ -9,16 +9,18 @@
  * Offline behavior:
  * - If the socket never opens at all, one {t:"status", online:false, count:1}
  *   event fires and the client goes dormant (sends become no-ops) — the game
- *   then runs single-player.
+ *   then runs single-player. Tab focus / network-online wakes it for another
+ *   attempt, so a server that comes up later is still found.
  * - If a previously-open socket drops, the same offline status fires once and
- *   the client attempts exactly 2 reconnects, 3s apart, re-sending join with
- *   the last known MoveState. If both fail, it goes dormant.
+ *   the client keeps retrying forever with capped exponential backoff (3s,
+ *   6s, ... 30s), re-sending join with the last known MoveState. A laptop
+ *   sleep or server restart must never permanently strand a live session.
  */
 
 import type { BoothClaim, EmoteKind, MoveState, NetClient, NetEvent, PlayerProfile } from "@/lib/types";
 
-const RECONNECT_ATTEMPTS = 2;
 const RECONNECT_DELAY_MS = 3000;
+const RECONNECT_DELAY_MAX_MS = 30_000;
 
 /**
  * HTTP origin of the floor server (same host/port as the ws endpoint), e.g.
@@ -56,6 +58,26 @@ function authTokenFor(profileId: string): string | undefined {
   }
 }
 
+/**
+ * Guest secret (same key/logic as lib/auth.ts guestSecret(), duplicated here
+ * for the same acyclic-import reason as authTokenFor). Sent with join so the
+ * server can bind guest ids to this browser — see verifyIdentity server-side.
+ */
+function guestSecretInline(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const existing = window.localStorage.getItem("founderfloor:gs");
+    if (existing && existing.length >= 16) return existing;
+    const s = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) =>
+      b.toString(16).padStart(2, "0"),
+    ).join("");
+    window.localStorage.setItem("founderfloor:gs", s);
+    return s;
+  } catch {
+    return undefined;
+  }
+}
+
 type Phase =
   | "idle" // created, connect() not called yet
   | "connecting" // socket created, waiting for open
@@ -74,10 +96,11 @@ export function createNetClient(wsUrl?: string): NetClient {
   let me: PlayerProfile | null = null;
   let lastMove: MoveState | null = null;
   let myClaim: BoothClaim | null = null; // re-announced with join on reconnect
-  let attemptsLeft = RECONNECT_ATTEMPTS;
+  let backoffMs = RECONNECT_DELAY_MS; // doubles per failed retry, capped
   let reconnectAttempt = false; // is the current socket a reconnect attempt?
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let warned = false; // at most one console.warn per client lifetime
+  let wakeListener: (() => void) | null = null; // visibility/online revival
 
   const isBrowser = (): boolean => typeof window !== "undefined";
 
@@ -155,35 +178,66 @@ export function createNetClient(wsUrl?: string): NetClient {
     emit({ t: "status", online: false, count: 1 });
   }
 
+  function retryNow(): void {
+    if (reconnectTimer !== null) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    phase = "connecting";
+    reconnectAttempt = true;
+    openSocket();
+  }
+
   function scheduleReconnect(): void {
-    attemptsLeft -= 1;
     phase = "waiting";
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
       if (phase !== "waiting") return;
-      phase = "connecting";
-      reconnectAttempt = true;
-      openSocket();
-    }, RECONNECT_DELAY_MS);
+      retryNow();
+    }, backoffMs);
+    backoffMs = Math.min(backoffMs * 2, RECONNECT_DELAY_MAX_MS);
   }
 
   function handleFailure(hadOpened: boolean): void {
     if (phase === "closed" || phase === "dormant") return;
     if (hadOpened) {
       // A live connection dropped: announce offline once for this outage,
-      // then start a fresh reconnect budget.
+      // then retry forever with fresh backoff — an outage longer than any
+      // fixed budget (laptop sleep, server restart) must not strand the tab.
       emitOffline();
-      attemptsLeft = RECONNECT_ATTEMPTS;
+      backoffMs = RECONNECT_DELAY_MS;
       scheduleReconnect();
+    } else if (revivedFromDormant) {
+      // A wake()-triggered probe from dormancy failed — the server is still
+      // down. Back to (quiet) dormancy rather than an endless retry loop on
+      // a machine that may simply not be running the floor server.
+      revivedFromDormant = false;
+      goDormant();
     } else if (reconnectAttempt) {
-      // A reconnect attempt failed; offline was already announced.
-      if (attemptsLeft > 0) scheduleReconnect();
-      else goDormant();
+      // A reconnect attempt failed; offline was already announced. Keep at
+      // it — the next try backs off up to the cap.
+      scheduleReconnect();
     } else {
       // The very first connection never opened: one offline signal, then
-      // dormant — the game runs single-player with NPC founders only.
+      // dormant — the game runs single-player with NPC founders only. A tab
+      // focus or network-online event wakes it for another attempt.
       emitOffline();
       goDormant();
+    }
+  }
+
+  let revivedFromDormant = false;
+
+  /** Focus/online: fire a pending retry immediately, or revive a dormant client. */
+  function wake(): void {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    if (phase === "waiting") {
+      backoffMs = RECONNECT_DELAY_MS;
+      retryNow();
+    } else if (phase === "dormant" && me && lastMove) {
+      backoffMs = RECONNECT_DELAY_MS;
+      revivedFromDormant = true;
+      retryNow();
     }
   }
 
@@ -203,7 +257,8 @@ export function createNetClient(wsUrl?: string): NetClient {
       opened = true;
       phase = "open";
       reconnectAttempt = false;
-      attemptsLeft = RECONNECT_ATTEMPTS; // a future outage gets a fresh budget
+      revivedFromDormant = false;
+      backoffMs = RECONNECT_DELAY_MS; // a future outage gets a fresh budget
       if (me && lastMove) {
         // player is the full profile — id/name/look plus the optional status
         // line, which the server relays on join and hover cards read.
@@ -215,6 +270,7 @@ export function createNetClient(wsUrl?: string): NetClient {
             s: lastMove,
             claim: myClaim ?? undefined,
             token: authTokenFor(me.id),
+            gs: guestSecretInline(),
           }),
         );
       }
@@ -268,8 +324,14 @@ export function createNetClient(wsUrl?: string): NetClient {
       myClaim = claim ?? null;
       selfId = m.id; // provisional; the server may suffix it (welcome.selfId)
       reconnectAttempt = false;
-      attemptsLeft = RECONNECT_ATTEMPTS;
+      revivedFromDormant = false;
+      backoffMs = RECONNECT_DELAY_MS;
       phase = "connecting";
+      if (!wakeListener) {
+        wakeListener = wake;
+        window.addEventListener("online", wakeListener);
+        document.addEventListener("visibilitychange", wakeListener);
+      }
       openSocket();
     },
 
@@ -277,6 +339,11 @@ export function createNetClient(wsUrl?: string): NetClient {
       if (!isBrowser()) return; // SSR no-op
       phase = "closed";
       clearTimer();
+      if (wakeListener) {
+        window.removeEventListener("online", wakeListener);
+        document.removeEventListener("visibilitychange", wakeListener);
+        wakeListener = null;
+      }
       dropSocket(); // detaches all socket listeners — no events after this
     },
 

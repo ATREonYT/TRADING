@@ -50,7 +50,7 @@ const TIER_BLURB: Record<SubTier, string> = {
 const BADGE_META: Record<string, { name: string; blurb: string; glyph: GlyphId }> = {
   "first-steps": {
     name: "First Steps",
-    blurb: "Walked, talked, reacted, connected.",
+    blurb: "Took the tour — or knew the way already.",
     glyph: "star",
   },
   "demo-night": {
@@ -60,7 +60,7 @@ const BADGE_META: Record<string, { name: string; blurb: string; glyph: GlyphId }
   },
   rounds: {
     name: "Making Rounds",
-    blurb: "Talked to three different founders.",
+    blurb: "Chatted with three different founders.",
     glyph: "rocket",
   },
   connector: {
@@ -136,6 +136,12 @@ function formFrom(s: Startup): BoothForm {
   };
 }
 
+/** Display name for a floor id; "" means the connection happened off-floor. */
+function floorName(floorId: string): string {
+  if (!floorId) return "met online";
+  return FLOORS.find((f) => f.id === floorId)?.name ?? floorId;
+}
+
 function relativeTime(ts: number): string {
   const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
   if (s < 60) return "just now";
@@ -150,12 +156,15 @@ function relativeTime(ts: number): string {
 function SectionCard({
   title,
   children,
+  id,
 }: {
   title: string;
   children: React.ReactNode;
+  /** Anchor target, e.g. the landing pricing cards link to #membership. */
+  id?: string;
 }) {
   return (
-    <section aria-label={title} className="panel p-6">
+    <section id={id} aria-label={title} className="panel scroll-mt-6 p-6">
       <h2 className="font-display text-xl">{title}</h2>
       <div className="mt-4">{children}</div>
     </section>
@@ -308,6 +317,22 @@ export default function ProfilePage() {
     img.src = url;
   };
 
+  // Quest rewards normally land on the floor; grant here too, so a quest
+  // finished elsewhere never shows checked-but-badgeless in the list below.
+  useEffect(() => {
+    if (!ready) return;
+    for (const q of questStates(state)) {
+      if (!q.done || q.claimed) continue;
+      actions.markQuestClaimed(q.def.id);
+      actions.grantBadge(q.def.reward.badge);
+      setToast({
+        id: Date.now(),
+        text: `Quest complete: ${q.def.title} — ${q.def.rewardLabel}`,
+      });
+      break; // one per pass; the rest follow on subsequent renders
+    }
+  }, [ready, state, actions]);
+
   const verify = () => {
     const n = Math.max(0, Number(monthly) || 0);
     actions.verifyMyRevenue(n, Math.max(0, Math.min(100, progress)) / 100);
@@ -401,7 +426,7 @@ export default function ProfilePage() {
                     aria-pressed={state.profile.title === t}
                     className={`micro rounded-sm border px-2 py-1 ${
                       state.profile.title === t
-                        ? "border-gold text-gold ring-1 ring-gold/40"
+                        ? "border-gold text-gold-deep ring-1 ring-gold/40"
                         : "border-line text-muted hover:border-muted"
                     }`}
                   >
@@ -786,7 +811,7 @@ export default function ProfilePage() {
       </SectionCard>
 
       {/* ---- Membership ---- */}
-      <SectionCard title="Membership">
+      <SectionCard title="Membership" id="membership">
         <div className="mb-4 flex items-center gap-2">
           <span className="micro rounded-sm border border-line px-1.5 py-0.5 text-muted">
             demo — no payment wired
@@ -900,7 +925,7 @@ export default function ProfilePage() {
                         )}
                       </p>
                       <p className="micro mt-0.5 text-muted">
-                        {c.floorId} · {relativeTime(c.ts)}
+                        {floorName(c.floorId)} · {relativeTime(c.ts)}
                       </p>
                     </div>
                     <button
@@ -919,11 +944,11 @@ export default function ProfilePage() {
                       id={`connection-note-${c.ts}`}
                       type="text"
                       defaultValue={c.note ?? ""}
-                      maxLength={120}
+                      maxLength={200}
                       placeholder="add a note…"
                       autoComplete="off"
                       onBlur={(e) =>
-                        actions.setConnectionNote(c.ts, e.target.value.trim().slice(0, 120))
+                        actions.setConnectionNote(c.ts, e.target.value.trim().slice(0, 200))
                       }
                       className="w-full rounded-md border border-line px-2.5 py-1.5 text-xs placeholder:text-muted/70"
                     />

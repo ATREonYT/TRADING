@@ -8,6 +8,7 @@ import { floorById } from "@/lib/data/floors";
 import { STARTUPS, IDLE_LINES, replyFor } from "@/lib/data/startups";
 import { createNetClient } from "@/lib/net";
 import { createGame } from "@/game/engine";
+import { isClaimableSpot, seedSpotIndex } from "@/game/tilemap";
 import { ONBOARDING_STEPS, TIER_ORDER } from "@/lib/types";
 import type {
   ActivityItem,
@@ -124,7 +125,13 @@ export default function FloorPage({ params }: { params: { id: string } }) {
   const replyTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** The claim held before the last optimistic booth_set (for denial rollback). */
-  const prevClaimRef = useRef<BoothClaim | null>(null);
+  // One-shot rollback token for the claim in flight: consumed by the first
+  // booth_denied and time-limited, so a denial arriving from a reconnect
+  // re-announce (not a fresh claim) can't resurrect a spot abandoned long ago.
+  const prevClaimRef = useRef<{ claim: BoothClaim; ts: number } | null>(null);
+  // Last NPC booth the player talked at — its thread closes on walk-away
+  // regardless of whether the booth card is still open.
+  const lastNpcBoothRef = useRef<{ spotIndex: number; startupId: string } | null>(null);
 
   const myStartup = state.myStartup;
   const startups: Record<string, Startup> = useMemo(
@@ -182,6 +189,26 @@ export default function FloorPage({ params }: { params: { id: string } }) {
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, []);
+
+  // Escape closes the topmost overlay (request card first, then booth card) —
+  // keyboard users shouldn't need to hunt a small × with the mouse.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== "Escape") return;
+      if (incomingReq) setIncomingReq(null);
+      else if (activeBooth) setActiveBooth(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [incomingReq, activeBooth]);
+
+  // Phones: the top-right minimap sits under the booth/request cards (DOM
+  // paints above canvas) — hide it while a card is open, restore after.
+  useEffect(() => {
+    if (!coarse) return;
+    const cardOpen = Boolean(activeBooth || incomingReq);
+    handleRef.current?.setMinimap(cardOpen ? false : minimapOn);
+  }, [coarse, activeBooth, incomingReq, minimapOn]);
 
   const showToast = useCallback((text: string) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -399,7 +426,9 @@ export default function FloorPage({ params }: { params: { id: string } }) {
       // rolls back instead of silently ghosting for everyone else.
       const prevIdx = claimsRef.current[floor.id];
       prevClaimRef.current =
-        prevIdx !== undefined ? { spotIndex: prevIdx, startup: s } : null;
+        prevIdx !== undefined
+          ? { claim: { spotIndex: prevIdx, startup: s }, ts: Date.now() }
+          : null;
       actions.claimSpot(floor.id, b.spotIndex);
       const claim = { spotIndex: b.spotIndex, startup: s };
       handleRef.current?.setMyBooth(claim);
@@ -712,6 +741,14 @@ export default function FloorPage({ params }: { params: { id: string } }) {
         refreshInbox();
       }
       if (ev.t === "connect_accept") {
+        // Mirror into the local store: quests and calling-card counts must
+        // include real people, not just NPC handshakes.
+        actions.addConnection({
+          name: ev.peerName,
+          founder: ev.peerName,
+          floorId: f.id,
+          peerId: ev.peerId,
+        });
         showToast(`${ev.peerName} accepted — you're connected. Chat lives in Connections.`);
         refreshInbox();
       }
@@ -721,10 +758,11 @@ export default function FloorPage({ params }: { params: { id: string } }) {
         // re-announce so every state (server, net client, room) reconverges
         // instead of leaving a ghost stand behind.
         const prev = prevClaimRef.current;
-        if (prev && prev.spotIndex !== ev.spotIndex) {
-          actions.claimSpot(f.id, prev.spotIndex);
-          handleRef.current?.setMyBooth(prev);
-          netRef.current?.sendBoothSet(prev);
+        prevClaimRef.current = null; // one-shot — a second denial won't loop
+        if (prev && Date.now() - prev.ts < 15_000 && prev.claim.spotIndex !== ev.spotIndex) {
+          actions.claimSpot(f.id, prev.claim.spotIndex);
+          handleRef.current?.setMyBooth(prev.claim);
+          netRef.current?.sendBoothSet(prev.claim);
           showToast("Someone claimed that spot first. Your stand stays put.");
         } else {
           actions.unclaimSpot(f.id);
@@ -735,7 +773,14 @@ export default function FloorPage({ params }: { params: { id: string } }) {
       }
     });
 
-    const claimIdx = claimsRef.current[f.id];
+    // A stored claim whose spot no longer exists (floor defs change between
+    // versions) would announce an invisible stand that still blocks that
+    // index in arbitration — drop it instead.
+    let claimIdx: number | undefined = claimsRef.current[f.id];
+    if (claimIdx !== undefined && !isClaimableSpot(f, claimIdx)) {
+      actions.unclaimSpot(f.id);
+      claimIdx = undefined;
+    }
     const mine = myStartupRef.current;
     const myClaim =
       mine && claimIdx !== undefined ? { spotIndex: claimIdx, startup: mine } : undefined;
@@ -753,30 +798,34 @@ export default function FloorPage({ params }: { params: { id: string } }) {
         onNearBooth: (b) => {
           setNearBooth(b);
           const active = activeBoothRef.current;
-          if (!active) return;
-          if (!b || b.spotIndex !== active.spotIndex) {
-            // Walked away — the card and the NPC conversation close behind
-            // you. Closing hides the thread; its history survives. The chat
-            // panel folds back down so the floor stays the main thing.
-            setActiveBooth(null);
-            const s = active.startup;
-            if (s && !active.isYours && !active.ownerId) {
-              const key = `npc:${s.id}`;
-              setThreads((prev) =>
-                prev[key]?.open ? { ...prev, [key]: { ...prev[key], open: false } } : prev,
-              );
-              setTab((t) => {
-                if (t === key) {
-                  setChatCollapsed(true);
-                  return "floor";
-                }
-                return t;
-              });
+          if (active) {
+            if (!b || b.spotIndex !== active.spotIndex) {
+              setActiveBooth(null); // walked away — the card closes behind you
+            } else {
+              // Same stand, fresh instance (the floor was rebuilt) — keep the
+              // card but point it at current data.
+              setActiveBooth(b);
             }
-          } else {
-            // Same stand, fresh instance (the floor was rebuilt) — keep the
-            // card but point it at current data.
-            setActiveBooth(b);
+          }
+          // The NPC conversation closes on walk-away even if the card was
+          // dismissed by hand earlier — tracked separately from the card so
+          // "tap ×, then wander off" doesn't leave the thread open. Closing
+          // hides the thread; its history survives. The chat panel folds
+          // back down so the floor stays the main thing.
+          const lastNpc = lastNpcBoothRef.current;
+          if (lastNpc && (!b || b.spotIndex !== lastNpc.spotIndex)) {
+            lastNpcBoothRef.current = null;
+            const key = `npc:${lastNpc.startupId}`;
+            setThreads((prev) =>
+              prev[key]?.open ? { ...prev, [key]: { ...prev[key], open: false } } : prev,
+            );
+            setTab((t) => {
+              if (t === key) {
+                setChatCollapsed(true);
+                return "floor";
+              }
+              return t;
+            });
           }
         },
         onInteract: (b) => {
@@ -787,6 +836,7 @@ export default function FloorPage({ params }: { params: { id: string } }) {
           // own booth has you.
           if (b.startup && !b.isYours && !b.ownerId) {
             openNpcThread(b.startup);
+            lastNpcBoothRef.current = { spotIndex: b.spotIndex, startupId: b.startup.id };
           }
         },
         onPresence: (count, online) => setPresence({ count, online }),
@@ -803,7 +853,9 @@ export default function FloorPage({ params }: { params: { id: string } }) {
     // the spawn point up to the booth you searched for.
     const boothParam = new URLSearchParams(window.location.search).get("booth");
     if (boothParam) {
-      const spotIndex = f.startupIds.indexOf(boothParam);
+      // seedSpotIndex accounts for reservedSpot — a raw startupIds.indexOf
+      // drifts one spot off on floors whose reserved spot sits mid-list
+      const spotIndex = seedSpotIndex(f, boothParam);
       if (spotIndex >= 0) handle.walkToBooth(spotIndex);
     }
 
@@ -972,18 +1024,28 @@ export default function FloorPage({ params }: { params: { id: string } }) {
             compact
             req={incomingReq}
             onRespond={(accept) => {
-              const peer = incomingReq.from.id;
-              const name = incomingReq.from.name;
+              const from = incomingReq.from;
               setIncomingReq(null);
               void respondToRequest(
                 state.profile.id,
                 state.profile.name,
-                peer,
+                from.id,
                 accept,
               ).then(() => refreshInbox());
+              if (accept) {
+                // Mirror the mutual connection into the local store so quests
+                // and calling-card counts include real people, not just NPCs.
+                actions.addConnection({
+                  startupId: from.startupName ? `claim:${from.id}` : undefined,
+                  name: from.startupName ?? from.name,
+                  founder: from.name,
+                  floorId: floor.id,
+                  peerId: from.id,
+                });
+              }
               showToast(
                 accept
-                  ? `Connected with ${name}. Chat lives in Connections.`
+                  ? `Connected with ${from.name}. Chat lives in Connections.`
                   : "Declined, quietly.",
               );
             }}

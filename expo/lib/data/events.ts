@@ -53,7 +53,7 @@ export function nextEvent(nowMs: number): EventInfo {
   return {
     name: "Demo Night",
     blurb:
-      "One hour of live demos at the main hall stage. Founders show what shipped this week. No slides.",
+      "The weekly hour everyone shows up at the Main Hall at once. Be in the room and there's a badge in it for you.",
     floorId: "main-hall",
     startMs,
     endMs: startMs + DURATION,

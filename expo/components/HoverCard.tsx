@@ -51,7 +51,7 @@ export default function HoverCard({
         <div className="flex items-baseline gap-2">
           <p className="text-sm leading-tight text-ink">{target.name}</p>
           {target.title && (
-            <span className="micro rounded-sm border border-gold/50 px-1 py-px text-gold">
+            <span className="micro rounded-sm border border-gold/50 px-1 py-px text-gold-deep">
               {target.title}
             </span>
           )}

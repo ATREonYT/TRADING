@@ -5,6 +5,7 @@ import type { NetClient, Startup } from "@/lib/types";
 import RankBadge from "@/components/RankBadge";
 import PixelGlyph from "@/components/PixelGlyph";
 import Guestbook from "@/components/Guestbook";
+import { luma } from "@/game/sprites";
 
 interface BoothCardProps {
   startup: Startup;
@@ -46,6 +47,9 @@ export default function BoothCard({
 }: BoothCardProps) {
   const firstName = s.founder.split(" ")[0] || s.founder;
   const pct = Math.round(Math.max(0, Math.min(1, s.goalProgress)) * 100);
+  // Banner colors are user-picked — same light/dark flip the tilemap uses,
+  // or pale banners render their sign text unreadable.
+  const bannerFg = luma(s.booth.banner) > 0.62 ? "#23201A" : "#F2EFE7";
 
   return (
     <aside
@@ -61,14 +65,17 @@ export default function BoothCard({
           // eslint-disable-next-line @next/next/no-img-element
           <img src={s.booth.logo} alt="" aria-hidden="true" width={16} height={16} className="pixelated" />
         ) : (
-          <PixelGlyph glyph={s.booth.glyph} color="#F2EFE7" size={16} />
+          <PixelGlyph glyph={s.booth.glyph} color={bannerFg} size={16} />
         )}
-        <span className="micro truncate text-paper">{s.booth.sign}</span>
+        <span className="micro truncate" style={{ color: bannerFg }}>
+          {s.booth.sign}
+        </span>
         <button
           type="button"
           onClick={onClose}
           aria-label="Close booth card"
-          className="ml-auto rounded-sm px-1 leading-none text-paper/80 hover:text-paper"
+          className="ml-auto rounded-sm px-1 leading-none opacity-80 hover:opacity-100"
+          style={{ color: bannerFg }}
         >
           ×
         </button>

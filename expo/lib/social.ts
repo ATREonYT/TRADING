@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppState, InboxData, ProfileCard } from "@/lib/types";
 import { httpBase } from "@/lib/net";
-import { tokenFor } from "@/lib/auth";
+import { guestSecret, tokenFor } from "@/lib/auth";
 
 export const EMPTY_INBOX: InboxData = {
   requests: [],
@@ -49,7 +49,7 @@ async function post(path: string, body: unknown): Promise<boolean> {
 }
 
 export function sendConnectRequest(card: ProfileCard, to: string): Promise<boolean> {
-  return post("/social/request", { card, to, token: tokenFor(card.id) });
+  return post("/social/request", { card, to, token: tokenFor(card.id), gs: guestSecret() });
 }
 
 export function respondToRequest(
@@ -58,7 +58,7 @@ export function respondToRequest(
   peer: string,
   accept: boolean,
 ): Promise<boolean> {
-  return post("/social/respond", { me, meName, peer, accept, token: tokenFor(me) });
+  return post("/social/respond", { me, meName, peer, accept, token: tokenFor(me), gs: guestSecret() });
 }
 
 export function sendSocialDm(
@@ -67,18 +67,21 @@ export function sendSocialDm(
   to: string,
   text: string,
 ): Promise<boolean> {
-  return post("/social/dm", { from, fromName, to, text, token: tokenFor(from) });
+  return post("/social/dm", { from, fromName, to, text, token: tokenFor(from), gs: guestSecret() });
 }
 
 export async function fetchInbox(me: string, signal?: AbortSignal): Promise<InboxData | null> {
   const base = httpBase();
   if (!base || !me) return null;
   try {
+    // Credentials travel in headers, not the query string — URLs end up in
+    // proxy logs and browser history.
     const tok = tokenFor(me);
-    const res = await fetch(
-      `${base}/social?me=${encodeURIComponent(me)}${tok ? `&token=${encodeURIComponent(tok)}` : ""}`,
-      { signal },
-    );
+    const gs = guestSecret();
+    const headers: Record<string, string> = {};
+    if (tok) headers.Authorization = `Bearer ${tok}`;
+    if (gs) headers["X-FF-GS"] = gs;
+    const res = await fetch(`${base}/social?me=${encodeURIComponent(me)}`, { signal, headers });
     if (!res.ok) return null;
     return (await res.json()) as InboxData;
   } catch {
@@ -154,6 +157,7 @@ export function useSocialPush(
             player: { id: profileId, name: "inbox", look: { skin: 0, outfit: 0, hair: 0 } },
             s: { x: 0, y: 0, dir: "down", moving: false },
             token: tokenFor(profileId),
+            gs: guestSecret(),
           }),
         );
       };
