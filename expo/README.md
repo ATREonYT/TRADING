@@ -116,11 +116,22 @@ auto-connect. Accepted connections live server-side and appear on
 **/connections**, where chat keeps working even when neither of you is on a
 floor (HTTP polling against the floor server; messages persist in
 floor-data.json). The nav link carries an unread dot. NPC founders still
-connect instantly — they're exhibits, not people. No auth in this demo:
-profile ids are client-claimed, so treat the social graph as a courtesy layer
-until real accounts land.
+connect instantly — they're exhibits, not people.
 
-New endpoints: `GET /social?me=ID`, `POST /social/request|respond|dm`.
+New endpoints: `GET /social?me=ID[&token=..]`, `POST /social/request|respond|dm`.
+
+## Accounts
+
+Optional, no email required, never a wall — guests keep full access. Create an
+account in Profile (name + password; scrypt-salted hashes and bearer tokens on
+the floor server, persisted in floor-data.json). What it buys you: your
+identity is **server-verified** — a ws join or social call claiming an account
+id without its token is downgraded to an anonymous guest, so nobody can
+impersonate you, squat your stand, or read your inbox — and because the social
+graph is keyed by the account id, your connections and chats follow you to any
+device you sign in on. Quests, badges, and your booth design still live per
+browser (that sync is future work). Endpoints:
+`POST /auth/register|login|logout` (rate-limited per IP).
 
 ## Moderation
 

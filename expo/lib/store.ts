@@ -58,6 +58,12 @@ export interface StoreActions {
   markQuestClaimed(id: string): void;
   /** Pick an earned title (<= 24 chars; empty clears). Shown on your hover card. */
   setTitle(t: string): void;
+  /**
+   * Switch to a server-issued identity (sign-in) or back to a fresh guest id
+   * (sign-out). Keeps look/status/title and all local progress; the social
+   * graph on the server is keyed by the id, so it follows the account.
+   */
+  setIdentity(id: string, name: string): void;
 }
 
 // ---------- defaults ----------
@@ -106,6 +112,11 @@ function setState(next: AppState): void {
 }
 
 // ---------- id + parsing helpers ----------
+
+/** Fresh guest profile id (used by sign-out to leave the account identity). */
+export function makeGuestId(): string {
+  return makeId();
+}
 
 function makeId(): string {
   try {
@@ -543,6 +554,14 @@ const ACTIONS: StoreActions = {
     if (title) profile.title = title;
     else delete profile.title;
     setState({ ...state, profile });
+  },
+
+  setIdentity(id: string, name: string): void {
+    ensureClientInit();
+    const nextId = id.trim().slice(0, 64) || makeId();
+    const nextName = name.trim().slice(0, 24) || state.profile.name;
+    if (nextId === state.profile.id && nextName === state.profile.name) return;
+    setState({ ...state, profile: { ...state.profile, id: nextId, name: nextName } });
   },
 };
 

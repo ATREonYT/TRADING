@@ -46,7 +46,7 @@
  * Run with: node server/index.mjs   (PORT_WS overrides the port, default 3001)
  */
 
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, join } from "node:path";
@@ -107,6 +107,33 @@ const MAX_STANDS_PER_FLOOR = 64;
 /** reports: flat list for the operator to review by hand, cap 500. */
 let reports = [];
 const MAX_REPORTS = 500;
+
+/**
+ * accounts: nameLower -> { id: "acct_<uuid>", name, salt, hash } (scrypt).
+ * tokens: token -> account id (bearer sessions, persisted; logout deletes).
+ * Account ids are server-issued and enforced: a ws join or social POST that
+ * claims an "acct_" id must present a matching token, or it's treated as a
+ * guest. Guest ids (plain browser uuids) keep working with no auth at all —
+ * accounts are opt-in security, not a wall.
+ */
+const accounts = new Map();
+const tokens = new Map();
+const MAX_ACCOUNTS = 5000;
+const ACCT_PREFIX = "acct_";
+
+function hashPassword(password, salt) {
+  return scryptSync(password, salt, 32);
+}
+
+function verifyToken(token, profileId) {
+  if (typeof token !== "string" || !token) return false;
+  return tokens.get(token) === profileId;
+}
+
+/** True when this id claims to be an account but the token doesn't back it. */
+function isImpersonation(profileId, token) {
+  return typeof profileId === "string" && profileId.startsWith(ACCT_PREFIX) && !verifyToken(token, profileId);
+}
 
 /**
  * social: profileId -> { name, requests: ConnectRequest[], outgoing: string[],
@@ -232,6 +259,19 @@ function loadData() {
     }
   }
 
+  if (parsed.accounts && typeof parsed.accounts === "object") {
+    for (const [nameLower, a] of Object.entries(parsed.accounts)) {
+      if (!a || typeof a !== "object" || accounts.size >= MAX_ACCOUNTS) continue;
+      if (typeof a.id !== "string" || typeof a.name !== "string" || typeof a.salt !== "string" || typeof a.hash !== "string") continue;
+      accounts.set(nameLower.slice(0, MAX_NAME_LEN), { id: a.id, name: a.name, salt: a.salt, hash: a.hash });
+    }
+  }
+  if (parsed.tokens && typeof parsed.tokens === "object") {
+    for (const [tok, id] of Object.entries(parsed.tokens)) {
+      if (typeof id === "string" && tok.length === 64) tokens.set(tok, id);
+    }
+  }
+
   if (parsed.social && typeof parsed.social === "object") {
     for (const [pid, s] of Object.entries(parsed.social)) {
       if (!s || typeof s !== "object" || social.size >= MAX_SOCIAL_USERS) continue;
@@ -301,6 +341,8 @@ function saveNow() {
     reports,
     social: Object.fromEntries(social),
     dms: Object.fromEntries(dms),
+    accounts: Object.fromEntries(accounts),
+    tokens: Object.fromEntries(tokens),
   };
   const tmp = `${DATA_FILE}.tmp`;
   try {
@@ -589,10 +631,108 @@ function resolveProfileId(target) {
   return target;
 }
 
+/** POST /auth/*: register, login, logout. Fixed-window rate limit per IP. */
+const authAttempts = new Map(); // ip -> { windowStart, count }
+function authRateLimited(req) {
+  const ip = req.socket.remoteAddress ?? "?";
+  const now = Date.now();
+  let a = authAttempts.get(ip);
+  if (!a || now - a.windowStart >= 60_000) {
+    a = { windowStart: now, count: 0 };
+    authAttempts.set(ip, a);
+    if (authAttempts.size > 1000) authAttempts.clear(); // crude but bounded
+  }
+  return ++a.count > 10;
+}
+
+async function handleAuthPost(req, res, pathname) {
+  if (authRateLimited(req)) {
+    sendJson(res, { error: "slow down — try again in a minute" });
+    return;
+  }
+  const body = await readJson(req);
+  if (!body) {
+    notFound(res);
+    return;
+  }
+
+  if (pathname === "/auth/register") {
+    const name = sanitizeStr(body.name, MAX_NAME_LEN);
+    const password = typeof body.password === "string" ? body.password : "";
+    if (name.length < 3) {
+      sendJson(res, { error: "name needs at least 3 characters" });
+      return;
+    }
+    if (password.length < 6) {
+      sendJson(res, { error: "password needs at least 6 characters" });
+      return;
+    }
+    const key = name.toLowerCase();
+    if (accounts.has(key)) {
+      sendJson(res, { error: "that name is taken" });
+      return;
+    }
+    if (accounts.size >= MAX_ACCOUNTS) {
+      sendJson(res, { error: "the hall is full — no new accounts right now" });
+      return;
+    }
+    const salt = randomBytes(16).toString("hex");
+    const acct = {
+      id: `${ACCT_PREFIX}${randomUUID()}`,
+      name,
+      salt,
+      hash: hashPassword(password, salt).toString("hex"),
+    };
+    accounts.set(key, acct);
+    const token = randomBytes(32).toString("hex");
+    tokens.set(token, acct.id);
+    scheduleSave();
+    console.log(`[auth] register name="${name}" id=${acct.id}`);
+    sendJson(res, { id: acct.id, name: acct.name, token });
+    return;
+  }
+
+  if (pathname === "/auth/login") {
+    const name = sanitizeStr(body.name, MAX_NAME_LEN);
+    const password = typeof body.password === "string" ? body.password : "";
+    const acct = accounts.get(name.toLowerCase());
+    // Constant-shape compare either way, so login can't probe for names.
+    const salt = acct?.salt ?? "0".repeat(32);
+    const expected = Buffer.from(acct?.hash ?? "0".repeat(64), "hex");
+    const got = hashPassword(password, salt);
+    if (!acct || expected.length !== got.length || !timingSafeEqual(expected, got)) {
+      sendJson(res, { error: "wrong name or password" });
+      return;
+    }
+    const token = randomBytes(32).toString("hex");
+    tokens.set(token, acct.id);
+    scheduleSave();
+    sendJson(res, { id: acct.id, name: acct.name, token });
+    return;
+  }
+
+  if (pathname === "/auth/logout") {
+    const token = typeof body.token === "string" ? body.token : "";
+    if (tokens.delete(token)) scheduleSave();
+    sendJson(res, { ok: true });
+    return;
+  }
+
+  notFound(res);
+}
+
 /** POST /social/*: the mutual-connection and off-floor DM API. */
 async function handleSocialPost(req, res, pathname) {
   const body = await readJson(req);
   if (!body) {
+    notFound(res);
+    return;
+  }
+
+  // Account ids must be backed by a token; guests pass through untouched.
+  const actor =
+    pathname === "/social/request" ? body.card?.id : pathname === "/social/dm" ? body.from : body.me;
+  if (isImpersonation(actor, body.token)) {
     notFound(res);
     return;
   }
@@ -733,7 +873,7 @@ const server = createServer((req, res) => {
 
   if (req.method === "GET" && url.pathname === "/social") {
     const me = (url.searchParams.get("me") || "").slice(0, MAX_ID_LEN);
-    if (!me) {
+    if (!me || isImpersonation(me, url.searchParams.get("token") ?? "")) {
       notFound(res);
       return;
     }
@@ -753,6 +893,11 @@ const server = createServer((req, res) => {
 
   if (req.method === "POST" && url.pathname.startsWith("/social/")) {
     void handleSocialPost(req, res, url.pathname);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname.startsWith("/auth/")) {
+    void handleAuthPost(req, res, url.pathname);
     return;
   }
 
@@ -831,10 +976,16 @@ wss.on("connection", (ws, req) => {
 
   function handleJoin(msg) {
     const p = msg.player;
-    const rawId =
+    let rawId =
       typeof p?.id === "string" && p.id.trim()
         ? p.id.trim().slice(0, MAX_ID_LEN)
         : randomUUID();
+    // An account id without its token is an impersonation attempt — the
+    // connection still works, but as an anonymous guest.
+    if (isImpersonation(rawId, msg.token)) {
+      console.log(`[auth] rejected impersonation of ${rawId} — downgraded to guest`);
+      rawId = randomUUID();
+    }
     const name = sanitizeName(p?.name);
     const look = sanitizeLook(p?.look);
     const status = sanitizeStr(p?.status, MAX_STATUS_LEN);

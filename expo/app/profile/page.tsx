@@ -12,6 +12,7 @@ import {
   type Startup,
   type SubTier,
 } from "@/lib/types";
+import AccountCard from "@/components/AccountCard";
 import AvatarPicker from "@/components/AvatarPicker";
 import BoothPreview from "@/components/BoothPreview";
 import RankBadge from "@/components/RankBadge";
@@ -291,6 +292,11 @@ export default function ProfilePage() {
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-12">
       <h1 className="font-display text-3xl">Profile</h1>
+
+      {/* ---- Account ---- */}
+      <SectionCard title="Account">
+        <AccountCard onIdentity={actions.setIdentity} currentName={state.profile.name} />
+      </SectionCard>
 
       {/* ---- Identity ---- */}
       <SectionCard title="Identity">

@@ -40,6 +40,22 @@ export function httpBase(): string {
   return `${window.location.protocol === "https:" ? "https" : "http"}://${window.location.hostname}:3001`;
 }
 
+/**
+ * Bearer token for a signed-in account id (read inline rather than importing
+ * lib/auth.ts, which imports this module — keeps the graph acyclic). Guests
+ * return undefined and JSON.stringify drops the key.
+ */
+function authTokenFor(profileId: string): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const raw = window.localStorage.getItem("founderfloor:auth");
+    const a = raw ? (JSON.parse(raw) as { id?: string; token?: string }) : null;
+    return a && a.id === profileId && typeof a.token === "string" ? a.token : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 type Phase =
   | "idle" // created, connect() not called yet
   | "connecting" // socket created, waiting for open
@@ -192,7 +208,15 @@ export function createNetClient(wsUrl?: string): NetClient {
         // player is the full profile — id/name/look plus the optional status
         // line, which the server relays on join and hover cards read.
         // JSON.stringify drops the claim key when it is null -> undefined.
-        sock.send(JSON.stringify({ t: "join", player: me, s: lastMove, claim: myClaim ?? undefined }));
+        sock.send(
+          JSON.stringify({
+            t: "join",
+            player: me,
+            s: lastMove,
+            claim: myClaim ?? undefined,
+            token: authTokenFor(me.id),
+          }),
+        );
       }
     };
 

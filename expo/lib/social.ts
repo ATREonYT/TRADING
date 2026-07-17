@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppState, InboxData, ProfileCard } from "@/lib/types";
 import { httpBase } from "@/lib/net";
+import { tokenFor } from "@/lib/auth";
 
 export const EMPTY_INBOX: InboxData = {
   requests: [],
@@ -48,7 +49,7 @@ async function post(path: string, body: unknown): Promise<boolean> {
 }
 
 export function sendConnectRequest(card: ProfileCard, to: string): Promise<boolean> {
-  return post("/social/request", { card, to });
+  return post("/social/request", { card, to, token: tokenFor(card.id) });
 }
 
 export function respondToRequest(
@@ -57,7 +58,7 @@ export function respondToRequest(
   peer: string,
   accept: boolean,
 ): Promise<boolean> {
-  return post("/social/respond", { me, meName, peer, accept });
+  return post("/social/respond", { me, meName, peer, accept, token: tokenFor(me) });
 }
 
 export function sendSocialDm(
@@ -66,14 +67,18 @@ export function sendSocialDm(
   to: string,
   text: string,
 ): Promise<boolean> {
-  return post("/social/dm", { from, fromName, to, text });
+  return post("/social/dm", { from, fromName, to, text, token: tokenFor(from) });
 }
 
 export async function fetchInbox(me: string, signal?: AbortSignal): Promise<InboxData | null> {
   const base = httpBase();
   if (!base || !me) return null;
   try {
-    const res = await fetch(`${base}/social?me=${encodeURIComponent(me)}`, { signal });
+    const tok = tokenFor(me);
+    const res = await fetch(
+      `${base}/social?me=${encodeURIComponent(me)}${tok ? `&token=${encodeURIComponent(tok)}` : ""}`,
+      { signal },
+    );
     if (!res.ok) return null;
     return (await res.json()) as InboxData;
   } catch {
