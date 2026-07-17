@@ -42,6 +42,16 @@ badge and NPC founders only.
 - **?** (bottom right) — controls reference; the floor stays quiet otherwise:
   chat starts folded into a one-line bar (with the activity ticker in its
   header) and only unfolds when a conversation opens
+- **M** — toggle the minimap (bottom right; on by default when the hall is
+  bigger than your screen)
+- **Hover** a booth, founder, or player for a card with the one-liner, rank,
+  and status; **click a player** to open a DM with them
+- Chat panel (bottom left): **Floor** tab broadcasts to everyone on the floor
+  (and renders as a bubble over your avatar); other tabs are DM threads — NPC
+  founders or live players. Unread dots mean what unread dots always mean
+- **Walking away from a booth closes its card and conversation** — like a real
+  expo, the chat doesn't follow you across the hall
+- Typing in any input suspends movement keys
 
 ## Tutorial, quests and rewards
 
@@ -55,16 +65,6 @@ the three bonus reactions or an earnable **title** ("Connector", "Exhibitor",
 players see them. Progress lives in localStorage with everything else, and
 none of it gates the social basics — chat, connecting and claiming stay free
 for everyone.
-- **M** — toggle the minimap (bottom right; on by default when the hall is
-  bigger than your screen)
-- **Hover** a booth, founder, or player for a card with the one-liner, rank,
-  and status; **click a player** to open a DM with them
-- Chat panel (bottom left): **Floor** tab broadcasts to everyone on the floor
-  (and renders as a bubble over your avatar); other tabs are DM threads — NPC
-  founders or live players. Unread dots mean what unread dots always mean
-- **Walking away from a booth closes its card and conversation** — like a real
-  expo, the chat doesn't follow you across the hall
-- Typing in any input suspends movement keys
 
 ## Liveness
 
