@@ -125,6 +125,68 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* the map of the site — four surfaces, one sentence each */}
+      <section aria-labelledby="around-heading" className="border-b border-line">
+        <div className="mx-auto w-full max-w-5xl px-4 py-14 sm:py-16">
+          <h2 id="around-heading" className="font-display text-2xl sm:text-3xl">
+            Find your way around
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
+            Four places, each with one job. Everything you do in one shows up
+            in the others.
+          </p>
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              {
+                href: "/lobby",
+                glyph: "cube" as const,
+                name: "Floors",
+                blurb: "The halls themselves. Walk in, browse booths, talk to whoever's there.",
+                action: "Walk a floor",
+              },
+              {
+                href: "/directory",
+                glyph: "star" as const,
+                name: "Directory",
+                blurb: "Every startup on every floor, searchable. One click walks you to their booth.",
+                action: "Search startups",
+              },
+              {
+                href: "/connections",
+                glyph: "heart" as const,
+                name: "Connections",
+                blurb: "The people you've met. Requests, accepts, and chats that work from anywhere.",
+                action: "Open your rolodex",
+              },
+              {
+                href: "/profile",
+                glyph: "bolt" as const,
+                name: "Profile",
+                blurb: "Your name, your booth, your quests and badges — and an account if you want one.",
+                action: "Set yourself up",
+              },
+            ].map((s) => (
+              <Link
+                key={s.href}
+                href={s.href}
+                className="panel card-lift group flex flex-col p-5"
+              >
+                <div className="flex items-center justify-between">
+                  <PixelGlyph glyph={s.glyph} size={18} color="#6F6A5E" />
+                  <span className="micro text-muted">{s.name}</span>
+                </div>
+                <p className="mt-4 flex-1 text-sm leading-relaxed text-muted">
+                  {s.blurb}
+                </p>
+                <span className="mt-4 text-sm text-accent group-hover:underline">
+                  {s.action} →
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* floors */}
       <section aria-labelledby="floors-heading" className="border-b border-line">
         <div className="mx-auto w-full max-w-5xl px-4 py-14 sm:py-16">

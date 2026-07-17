@@ -40,7 +40,7 @@ export default function QuestPanel({ quests }: { quests: QuestState[] }) {
   return (
     <section
       aria-label="Quests"
-      className="panel pointer-events-auto w-[300px] max-w-[calc(100vw-24px)] shadow-card"
+      className="panel anim-in pointer-events-auto w-[300px] max-w-[calc(100vw-24px)] shadow-card"
     >
       <button
         type="button"

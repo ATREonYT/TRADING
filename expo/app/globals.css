@@ -5,6 +5,13 @@
 @layer base {
   html {
     height: 100%;
+    scroll-behavior: smooth;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
   }
 
   body {
@@ -57,6 +64,29 @@
     box-shadow: 0 2px 4px rgba(35, 32, 26, 0.06), 0 8px 20px rgba(35, 32, 26, 0.08);
   }
 
+  /* Page + panel entrances: one gentle fade-up, reused everywhere so screens
+     feel connected instead of snapping. */
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Route-level enter (app/template.tsx remounts this per navigation). */
+  .page-enter {
+    animation: fade-up 260ms ease-out both;
+  }
+
+  /* Panel/card enter — booth cards, request popups, chat panes, quest list. */
+  .anim-in {
+    animation: fade-up 170ms ease-out both;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .btn-press,
     .btn-press:active:not(:disabled),
@@ -64,6 +94,10 @@
     .card-lift:hover {
       transition: none;
       transform: none;
+    }
+    .page-enter,
+    .anim-in {
+      animation: none;
     }
   }
 }

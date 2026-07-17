@@ -53,7 +53,7 @@ export default function TutorialCoach({
   const body = coarse && copy.touchBody ? copy.touchBody : copy.body;
 
   return (
-    <div className="panel pointer-events-auto w-[320px] max-w-[calc(100vw-24px)] border-l-2 border-l-accent p-3 shadow-card">
+    <div className="panel anim-in pointer-events-auto w-[320px] max-w-[calc(100vw-24px)] border-l-2 border-l-accent p-3 shadow-card">
       <div className="flex items-baseline justify-between gap-2">
         <span className="micro text-accent">
           Tour · {idx + 1}/{ONBOARDING_STEPS.length}

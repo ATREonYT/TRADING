@@ -32,6 +32,9 @@ import { BubbleManager } from "./bubbles";
 import { findPath } from "./path";
 
 const ZOOM = 2; // world px -> screen px
+/** Snap a world coordinate to the screen-pixel grid (1/ZOOM world px). Sprites
+ * and camera both live on this grid, so nothing shimmers against the floor. */
+const snapW = (v: number): number => Math.round(v * ZOOM) / ZOOM;
 const SPEED = 140; // player px/s
 const LERP_RATE = 12; // remote interpolation, fraction/s
 const SEND_INTERVAL = 0.1; // 10 packets/s while moving
@@ -670,15 +673,13 @@ export function createGame(opts: GameOptions): GameHandle {
     dir: Dir,
     frame: number
   ): void => {
+    const px = snapW(x);
+    const py = snapW(y);
     ctx.fillStyle = "rgba(35,32,26,0.16)";
     ctx.beginPath();
-    ctx.ellipse(x, y - 1, 8, 3, 0, 0, Math.PI * 2);
+    ctx.ellipse(px, py - 1, 8, 3, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.drawImage(
-      frames[dir][frame],
-      Math.round(x - SPRITE_W / 2),
-      Math.round(y - SPRITE_H)
-    );
+    ctx.drawImage(frames[dir][frame], px - SPRITE_W / 2, py - SPRITE_H);
   };
 
   const pillPath = (bx: number, by: number, bw: number, bh: number): void => {
@@ -693,8 +694,8 @@ export function createGame(opts: GameOptions): GameHandle {
   };
 
   const drawLabel = (name: string, status: string | undefined, wx: number, wy: number): void => {
-    const sx = (wx - cam.x) * ZOOM;
-    const sy = (wy - SPRITE_H - cam.y) * ZOOM - 8;
+    const sx = Math.round((wx - cam.x) * ZOOM);
+    const sy = Math.round((wy - SPRITE_H - cam.y) * ZOOM - 8);
     if (sx < -90 || sx > cssW + 90 || sy < -40 || sy > cssH + 40) return;
     const st = status ? status.trim() : "";
     ctx.textAlign = "center";
@@ -705,9 +706,9 @@ export function createGame(opts: GameOptions): GameHandle {
       ctx.font = "9px system-ui, -apple-system, Segoe UI, sans-serif";
       w = Math.max(w, Math.min(ctx.measureText(st).width, 140));
     }
-    const bw = w + 12;
+    const bw = Math.ceil(w) + 12;
     const bh = st ? LABEL_H_STATUS : LABEL_H;
-    const bx = sx - bw / 2;
+    const bx = Math.round(sx - bw / 2);
     const by = sy - bh;
     ctx.fillStyle = "rgba(35,32,26,0.84)";
     pillPath(bx, by, bw, bh);
@@ -783,6 +784,11 @@ export function createGame(opts: GameOptions): GameHandle {
     cam.h = cssH / ZOOM;
     cam.x = clampAxis(player.x - cam.w / 2, mapW, cam.w);
     cam.y = clampAxis(player.y - cam.h / 2, mapH, cam.h);
+    // Snap the camera to the device-pixel grid — fractional camera positions
+    // make the floor shimmer against pixel-snapped sprites (the "buggy walk").
+    const grid = ZOOM * dpr;
+    cam.x = Math.round(cam.x * grid) / grid;
+    cam.y = Math.round(cam.y * grid) / grid;
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.imageSmoothingEnabled = false;

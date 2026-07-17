@@ -50,7 +50,7 @@ export default function BoothCard({
   return (
     <aside
       aria-label={`Booth: ${s.name}`}
-      className="panel pointer-events-auto flex w-[340px] max-w-[calc(100vw-24px)] flex-col shadow-card"
+      className="panel anim-in pointer-events-auto flex w-[340px] max-w-[calc(100vw-24px)] flex-col shadow-card"
     >
       {/* banner strip in the booth's own colors */}
       <div

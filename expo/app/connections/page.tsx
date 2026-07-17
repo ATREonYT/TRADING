@@ -160,38 +160,51 @@ export default function ConnectionsPage() {
                     last && last.fromId !== me && last.ts > (seen[c.peerId] ?? 0);
                   return (
                     <li key={c.peerId}>
-                      <button
-                        type="button"
-                        onClick={() => setOpenThread(c.peerId)}
-                        aria-pressed={openThread === c.peerId}
-                        className={`btn-press flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                      <div
+                        className={`btn-press flex w-full items-center gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors ${
                           openThread === c.peerId
                             ? "border-accent bg-accent-soft/40"
                             : "border-line hover:border-muted"
                         }`}
                       >
-                        <span className="min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => setOpenThread(c.peerId)}
+                          aria-pressed={openThread === c.peerId}
+                          className="min-w-0 flex-1 text-left"
+                        >
                           <span className="block truncate text-ink">{c.peerName}</span>
                           <span className="block truncate text-xs text-muted">
                             {last
                               ? `${last.fromId === me ? "you: " : ""}${last.text}`
                               : `connected ${relativeTime(c.ts)}`}
                           </span>
-                        </span>
+                        </button>
                         {unread && (
                           <span
                             aria-label="Unread"
                             className="h-2 w-2 shrink-0 rounded-full bg-accent"
                           />
                         )}
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => setOpenThread(c.peerId)}
+                          className={`micro btn-press shrink-0 rounded-sm border px-2 py-1 ${
+                            openThread === c.peerId
+                              ? "border-accent text-accent"
+                              : "border-line text-muted hover:border-accent hover:text-accent"
+                          }`}
+                        >
+                          Chat
+                        </button>
+                      </div>
                     </li>
                   );
                 })}
             </ul>
 
             {openThread && activePeer ? (
-              <div className="flex min-h-[280px] flex-col rounded-md border border-line">
+              <div className="anim-in flex min-h-[280px] flex-col rounded-md border border-line">
                 <div className="flex items-center justify-between border-b border-line bg-paper/60 px-3 py-2">
                   <span className="text-sm text-ink">{activePeer.peerName}</span>
                   <span className="micro text-muted">

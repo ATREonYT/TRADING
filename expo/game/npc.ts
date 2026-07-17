@@ -105,17 +105,16 @@ export class Npc {
 
   /** timeSec drives the idle bob; the engine passes its clock through. */
   draw(ctx: CanvasRenderingContext2D, timeSec: number): void {
+    // Half-world-pixel grid (matches the engine's snapW) — smooth shuffling.
+    const px = Math.round(this.x * 2) / 2;
+    const py = Math.round(this.y * 2) / 2;
     ctx.fillStyle = "rgba(35,32,26,0.16)";
     ctx.beginPath();
-    ctx.ellipse(this.x, this.y - 1, 8, 3, 0, 0, Math.PI * 2);
+    ctx.ellipse(px, py - 1, 8, 3, 0, 0, Math.PI * 2);
     ctx.fill();
     const bob = this.moving ? 0 : Math.round(Math.sin(timeSec * 2.1 + this.bobSeed) * 0.9);
     const frame = this.moving ? 1 + (Math.floor(this.animT * 6) % 2) : 0;
-    ctx.drawImage(
-      this.frames[this.dir][frame],
-      Math.round(this.x - SPRITE_W / 2),
-      Math.round(this.y - SPRITE_H) + bob
-    );
+    ctx.drawImage(this.frames[this.dir][frame], px - SPRITE_W / 2, py - SPRITE_H + bob);
   }
 }
 

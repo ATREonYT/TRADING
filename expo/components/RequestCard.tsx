@@ -22,7 +22,7 @@ export default function RequestCard({
   const c = req.from;
   return (
     <div
-      className={`panel pointer-events-auto w-[300px] max-w-[calc(100vw-24px)] p-3 shadow-card ${
+      className={`panel anim-in pointer-events-auto w-[300px] max-w-[calc(100vw-24px)] p-3 shadow-card ${
         compact ? "border-l-2 border-l-accent" : ""
       }`}
     >

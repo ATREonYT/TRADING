@@ -143,7 +143,7 @@ export default function ChatPanel({
   return (
     <section
       aria-label="Chat"
-      className="panel pointer-events-auto flex w-full flex-col overflow-hidden shadow-card sm:w-80"
+      className="panel anim-in pointer-events-auto flex w-full flex-col overflow-hidden shadow-card sm:w-80"
     >
       <div className="flex items-stretch border-b border-line">
         <div
