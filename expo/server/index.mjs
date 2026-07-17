@@ -106,6 +106,16 @@ const stands = new Map();
 const STAND_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const MAX_STANDS_PER_FLOOR = 64;
 
+/**
+ * registry: profileId -> { startup, ts } — startups registered the moment
+ * they're created in the profile editor, before (or without) a floor stand.
+ * The directory lists them as "no stand yet" and their categories join the
+ * filter chips; a claimed stand supersedes its owner's registry entry.
+ */
+const registry = new Map();
+const MAX_REGISTRY = 2000;
+const REGISTRY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
 /** reports: flat list for the operator to review by hand, cap 500. */
 let reports = [];
 const MAX_REPORTS = 500;
@@ -340,6 +350,16 @@ function loadData() {
     }
   }
 
+  if (parsed.registry && typeof parsed.registry === "object") {
+    const cutoff = Date.now() - REGISTRY_TTL_MS;
+    for (const [pid, v] of Object.entries(parsed.registry)) {
+      if (registry.size >= MAX_REGISTRY) break;
+      if (!v || typeof v !== "object" || typeof v.ts !== "number" || v.ts <= cutoff) continue;
+      const startup = sanitizeStartup(v.startup);
+      if (startup) registry.set(pid.slice(0, MAX_ID_LEN), { startup, ts: v.ts });
+    }
+  }
+
   if (parsed.guestSecrets && typeof parsed.guestSecrets === "object") {
     const cutoff = Date.now() - GUEST_SECRET_TTL_MS;
     for (const [pid, v] of Object.entries(parsed.guestSecrets)) {
@@ -422,6 +442,7 @@ function saveNow() {
     accounts: Object.fromEntries(accounts),
     tokens: Object.fromEntries(tokens),
     guestSecrets: Object.fromEntries(guestSecrets),
+    registry: Object.fromEntries(registry),
   };
   const tmp = `${DATA_FILE}.tmp`;
   try {
@@ -513,14 +534,11 @@ function sanitizeStr(v, max, fallback = "") {
 }
 
 /**
- * Rebuild a claim from an untrusted frame: only known fields survive, all of
- * them clamped. Returns null if the claim is structurally unusable.
+ * Rebuild a startup object from untrusted input: only known fields survive,
+ * all of them clamped. Returns null when structurally unusable. Shared by
+ * stand claims (ws) and profile registrations (HTTP).
  */
-function sanitizeClaim(claim) {
-  if (!claim || typeof claim !== "object") return null;
-  const spotIndex = Number(claim.spotIndex);
-  if (!Number.isInteger(spotIndex) || spotIndex < 0 || spotIndex > MAX_SPOT_INDEX) return null;
-  const s = claim.startup;
+function sanitizeStartup(s) {
   if (!s || typeof s !== "object") return null;
   const name = sanitizeStr(s.name, 40);
   if (!name) return null;
@@ -528,8 +546,6 @@ function sanitizeClaim(claim) {
   const goalProgress = Number(s.goalProgress);
   const verifiedRevenue = Number(s.verifiedRevenue);
   return {
-    spotIndex,
-    startup: {
       id: sanitizeStr(s.id, MAX_ID_LEN, "mine"),
       name,
       oneLiner: sanitizeStr(s.oneLiner, 80),
@@ -554,9 +570,21 @@ function sanitizeClaim(claim) {
           booth.logo.length <= 8000
             ? booth.logo
             : undefined,
-      },
     },
   };
+}
+
+/**
+ * Rebuild a claim from an untrusted frame. Returns null if the claim is
+ * structurally unusable.
+ */
+function sanitizeClaim(claim) {
+  if (!claim || typeof claim !== "object") return null;
+  const spotIndex = Number(claim.spotIndex);
+  if (!Number.isInteger(spotIndex) || spotIndex < 0 || spotIndex > MAX_SPOT_INDEX) return null;
+  const startup = sanitizeStartup(claim.startup);
+  if (!startup) return null;
+  return { spotIndex, startup };
 }
 
 /**
@@ -630,6 +658,12 @@ function pruneCredentials() {
   for (const [pid, v] of guestSecrets) {
     if (now - v.ts > GUEST_SECRET_TTL_MS) {
       guestSecrets.delete(pid);
+      changed = true;
+    }
+  }
+  for (const [pid, v] of registry) {
+    if (now - v.ts > REGISTRY_TTL_MS) {
+      registry.delete(pid);
       changed = true;
     }
   }
@@ -1062,16 +1096,19 @@ const server = createServer((req, res) => {
     return;
   }
 
-  // Every community startup on the site: one entry per claimed stand across
-  // all floors (live or away). Claims were sanitized on the way in, so this
-  // is a straight read — the directory merges it with the seed startups and
-  // grows its category chips from whatever founders typed.
+  // Every community startup on the site: claimed stands across all floors
+  // (live or away) plus registry entries for founders who created a startup
+  // but haven't claimed a spot yet. Everything was sanitized on the way in,
+  // so this is a straight read — the directory merges it with the seed
+  // startups and grows its category chips from whatever founders typed.
   if (req.method === "GET" && url.pathname === "/startups") {
     const out = [];
+    const standOwners = new Set();
     for (const [floorId, byOwner] of stands) {
       if (floorId === "__inbox") continue;
       const room = rooms.get(floorId);
       for (const [ownerId, st] of byOwner) {
+        standOwners.add(ownerId);
         out.push({
           floorId,
           spotIndex: st.claim.spotIndex,
@@ -1083,7 +1120,61 @@ const server = createServer((req, res) => {
       }
       if (out.length >= 512) break;
     }
+    for (const [ownerId, entry] of registry) {
+      if (out.length >= 512) break;
+      if (standOwners.has(ownerId)) continue; // their stand supersedes this
+      out.push({
+        floorId: null,
+        spotIndex: -1,
+        online: false,
+        lastSeen: entry.ts,
+        startup: entry.startup,
+      });
+    }
     sendJson(res, { startups: out });
+    return;
+  }
+
+  // Register/unregister a startup from the profile editor — this is what
+  // makes a newly created startup (and its category) appear in the
+  // directory before its founder ever claims a floor stand.
+  if (req.method === "POST" && url.pathname.startsWith("/startups/")) {
+    void (async () => {
+      if (authRateLimited(req)) {
+        sendJson(res, { error: "slow down — try again in a minute" });
+        return;
+      }
+      const body = await readJson(req);
+      const me = body ? sanitizeStr(body.me, MAX_ID_LEN) : "";
+      if (!body || !me || !verifyIdentity(me, body.token, body.gs)) {
+        notFound(res);
+        return;
+      }
+      if (url.pathname === "/startups/register") {
+        const startup = sanitizeStartup(body.startup);
+        if (!startup) {
+          notFound(res);
+          return;
+        }
+        if (!registry.has(me) && registry.size >= MAX_REGISTRY) {
+          sendJson(res, { error: "registry full" });
+          return;
+        }
+        // Rekeyed by owner like stand claims — every client calls its own
+        // startup "mine", which would collide in directory listings.
+        startup.id = `reg:${me}`;
+        registry.set(me, { startup, ts: Date.now() });
+        scheduleSave();
+        sendJson(res, { ok: true });
+        return;
+      }
+      if (url.pathname === "/startups/unregister") {
+        if (registry.delete(me)) scheduleSave();
+        sendJson(res, { ok: true });
+        return;
+      }
+      notFound(res);
+    })();
     return;
   }
 

@@ -83,7 +83,7 @@ export default function DirectoryPage() {
       });
     }
     for (const c of community) {
-      const floor = FLOOR_BY_ID[c.floorId];
+      const floor = c.floorId !== null ? FLOOR_BY_ID[c.floorId] : undefined;
       rows.push({
         key: c.startup.id,
         startup: c.startup,
@@ -234,7 +234,7 @@ export default function DirectoryPage() {
                     <RankBadge revenue={s.verifiedRevenue} />
                     {r.community && (
                       <span className="micro rounded-sm border border-accent/40 px-1.5 py-0.5 text-accent">
-                        {r.online ? "Here now" : "New booth"}
+                        {r.online ? "Here now" : r.floor ? "New booth" : "New"}
                       </span>
                     )}
                     {s.seekingCofounder && (
@@ -283,6 +283,12 @@ export default function DirectoryPage() {
                       </Link>
                     )}
                   </div>
+                )}
+                {!floor && r.community && (
+                  <span className="shrink-0 text-xs text-muted sm:text-right">
+                    No stand yet — their founder
+                    <br className="hidden sm:block" /> hasn&rsquo;t claimed a spot
+                  </span>
                 )}
               </li>
             );

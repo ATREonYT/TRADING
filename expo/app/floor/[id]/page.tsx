@@ -1013,7 +1013,11 @@ export default function FloorPage({ params }: { params: { id: string } }) {
             <span className="font-display text-base leading-none">{floor.name}</span>
             <TierTag tier={floor.tier} />
           </span>
-          <EventPill floorId={floor.id} onLiveHere={handleEventLive} />
+          {/* CSS-hidden (not unmounted) on phones so the live-badge effect
+              still runs; the chip itself is lobby content, not phone HUD */}
+          <span className="hidden sm:block">
+            <EventPill floorId={floor.id} onLiveHere={handleEventLive} />
+          </span>
         </div>
         <div className="pointer-events-auto flex items-center gap-2">
           <span className="panel flex items-center gap-2 px-3 py-2 text-xs text-muted shadow-card">
@@ -1229,8 +1233,8 @@ export default function FloorPage({ params }: { params: { id: string } }) {
               map
             </button>
           )}
-        </div>
-        <div className="order-1 flex sm:order-none sm:justify-end">
+          {/* help lives with the other controls — a lone centered "?" island
+              above the emote bar read as misplaced on phones */}
           <div className="relative">
             {helpOpen && (
               <div className="panel pointer-events-auto absolute bottom-10 right-0 w-56 p-3 text-xs leading-relaxed text-muted shadow-card">

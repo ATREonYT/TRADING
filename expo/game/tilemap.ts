@@ -333,6 +333,7 @@ export function buildFloor(
 
   // ----- under-layer -----
   const matFill = shade(floor.theme.floorB, -0.1);
+  const matRib = shade(floor.theme.floorB, -0.18);
   const matLine = shade(floor.theme.floorB, -0.26);
   const drawUnder = (ctx: CanvasRenderingContext2D, cam: Cam): void => {
     const x0 = Math.max(0, Math.floor(cam.x / T));
@@ -350,13 +351,27 @@ export function buildFloor(
       if (b.startup) drawCarpet(ctx, b.spot.x, b.spot.y, b.startup.booth.carpet, b.startup.booth.pattern);
       else drawCarpet(ctx, b.spot.x, b.spot.y, VACANT_FACE);
     }
-    // mats
+    // mats — woven doormats, not flat rectangles (a plain fill at 2x zoom
+    // reads as an unfinished placeholder)
     for (const m of mats) {
+      const mx = m.x * T + 3;
+      const my = m.y * T + 4;
+      const mw = 2 * T - 6;
+      const mh = T - 8;
       ctx.fillStyle = matFill;
-      ctx.fillRect(m.x * T + 3, m.y * T + 4, 2 * T - 6, T - 8);
+      ctx.fillRect(mx, my, mw, mh);
+      // weave: alternating vertical ribs
+      ctx.fillStyle = matRib;
+      for (let sx = mx + 4; sx < mx + mw - 4; sx += 6) {
+        ctx.fillRect(sx, my + 3, 3, mh - 6);
+      }
+      // bound edges top/bottom
+      ctx.fillStyle = matLine;
+      ctx.fillRect(mx, my, mw, 2);
+      ctx.fillRect(mx, my + mh - 2, mw, 2);
       ctx.strokeStyle = matLine;
       ctx.lineWidth = 1;
-      ctx.strokeRect(m.x * T + 3.5, m.y * T + 4.5, 2 * T - 7, T - 9);
+      ctx.strokeRect(mx + 0.5, my + 0.5, mw - 1, mh - 1);
     }
   };
 

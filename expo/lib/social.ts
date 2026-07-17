@@ -7,7 +7,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AppState, InboxData, ProfileCard } from "@/lib/types";
+import type { AppState, InboxData, ProfileCard, Startup } from "@/lib/types";
 import { httpBase } from "@/lib/net";
 import { guestSecret, tokenFor } from "@/lib/auth";
 
@@ -77,6 +77,20 @@ export function sendSocialDm(
   text: string,
 ): Promise<boolean> {
   return post("/social/dm", { from, fromName, to, text, token: tokenFor(from), gs: guestSecret() });
+}
+
+/**
+ * Put a startup in the site-wide registry the moment it's created — the
+ * directory lists it (category chip included) before its founder ever
+ * claims a floor stand. Fire-and-forget; offline saves stay local-only
+ * until the next save while the server is up.
+ */
+export function registerStartup(me: string, startup: Startup): Promise<boolean> {
+  return post("/startups/register", { me, startup, token: tokenFor(me), gs: guestSecret() });
+}
+
+export function unregisterStartup(me: string): Promise<boolean> {
+  return post("/startups/unregister", { me, token: tokenFor(me), gs: guestSecret() });
 }
 
 export async function fetchInbox(me: string, signal?: AbortSignal): Promise<InboxData | null> {

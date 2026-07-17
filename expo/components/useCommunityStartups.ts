@@ -13,7 +13,8 @@ import { httpBase } from "@/lib/net";
 import type { Startup } from "@/lib/types";
 
 export interface CommunityStartup {
-  floorId: string;
+  /** null = registered from the profile editor, no floor stand claimed yet. */
+  floorId: string | null;
   spotIndex: number;
   /** Founder currently walking that floor (vs. an away stand). */
   online: boolean;
@@ -26,7 +27,7 @@ function isEntry(v: unknown): v is CommunityStartup {
   const e = v as Record<string, unknown>;
   const s = e.startup as Record<string, unknown> | undefined;
   return (
-    typeof e.floorId === "string" &&
+    (typeof e.floorId === "string" || e.floorId === null) &&
     typeof e.spotIndex === "number" &&
     typeof e.online === "boolean" &&
     typeof e.lastSeen === "number" &&

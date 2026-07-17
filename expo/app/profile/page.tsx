@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { isValidLogo, useAppState } from "@/lib/store";
+import { registerStartup, unregisterStartup } from "@/lib/social";
 import { RANKS, rankFor } from "@/lib/ranks";
 import { FLOORS } from "@/lib/data/floors";
 import { earnedTitles, questStates } from "@/lib/data/quests";
@@ -263,6 +264,9 @@ export default function ProfilePage() {
       },
     };
     actions.saveMyStartup(startup);
+    // Register site-wide immediately: the directory (and its category chips)
+    // pick this up without waiting for a floor stand to be claimed.
+    void registerStartup(state.profile.id, startup);
     setToast({ id: Date.now(), text: "Booth saved. See you on the floor." });
   };
 
@@ -711,6 +715,7 @@ export default function ProfilePage() {
                   type="button"
                   onClick={() => {
                     actions.clearMyStartup();
+                    void unregisterStartup(state.profile.id);
                     setForm(EMPTY_FORM);
                     setMonthly("");
                     setProgress(0);
