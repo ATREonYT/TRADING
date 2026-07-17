@@ -1062,6 +1062,31 @@ const server = createServer((req, res) => {
     return;
   }
 
+  // Every community startup on the site: one entry per claimed stand across
+  // all floors (live or away). Claims were sanitized on the way in, so this
+  // is a straight read — the directory merges it with the seed startups and
+  // grows its category chips from whatever founders typed.
+  if (req.method === "GET" && url.pathname === "/startups") {
+    const out = [];
+    for (const [floorId, byOwner] of stands) {
+      if (floorId === "__inbox") continue;
+      const room = rooms.get(floorId);
+      for (const [ownerId, st] of byOwner) {
+        out.push({
+          floorId,
+          spotIndex: st.claim.spotIndex,
+          online: ownerOnline(room, ownerId),
+          lastSeen: st.lastSeen,
+          startup: st.claim.startup,
+        });
+        if (out.length >= 512) break; // plenty for a directory page
+      }
+      if (out.length >= 512) break;
+    }
+    sendJson(res, { startups: out });
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/guestbook") {
     const floorId = (url.searchParams.get("floor") || "").slice(0, MAX_ID_LEN);
     const key = (url.searchParams.get("key") || "").slice(0, MAX_KEY_LEN);

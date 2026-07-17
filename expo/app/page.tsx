@@ -55,49 +55,54 @@ export default function LandingPage() {
 
   return (
     <main>
-      {/* hero */}
+      {/* hero — two columns on desktop so the pixel scene fills the space
+          beside the copy instead of leaving the right half of the page blank;
+          stacks to a full-width band on phones and tablets */}
       <section className="border-b border-line">
-        <div className="mx-auto w-full max-w-5xl px-4 pb-14 pt-16 sm:pt-20">
-          <p className="micro text-muted">A walkable expo for startups</p>
-          <h1 className="mt-4 max-w-2xl font-display text-4xl leading-tight sm:text-5xl">
-            A trade-show floor that never tears down.
-          </h1>
-          <p className="mt-5 max-w-xl text-base leading-relaxed text-muted">
-            FounderFloor is a small 2D world where startups keep a booth and
-            founders actually stand at it. You walk around, you read the signs,
-            you talk to people. Ranks come from verified revenue, so the booth
-            with the gold badge earned it the boring way.
-          </p>
-          <p className="micro mt-3 text-muted">
-            Verification is simulated in this demo. The skepticism is real.
-          </p>
-          <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Link
-              href="/lobby"
-              className="rounded-md bg-accent px-5 py-2.5 text-sm font-medium text-white hover:bg-accent/90"
-            >
-              Walk the floor
-            </Link>
-            <Link
-              href="/profile"
-              className="rounded-md border border-ink px-5 py-2.5 text-sm font-medium text-ink hover:bg-panel"
-            >
-              Set up a booth
-            </Link>
-          </div>
-          <p className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted">
-            <span className="flex items-center gap-1.5">
-              <Kbd>&uarr;&darr;&larr;&rarr;</Kbd> walk
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Kbd>E</Kbd> talk
-            </span>
-            <span>Nothing to install.</span>
-          </p>
-          <div className="mt-10">
-            <HeroScene />
+        <div className="mx-auto grid w-full max-w-6xl grid-cols-1 items-center gap-10 px-4 pb-14 pt-16 sm:pt-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-12">
+          <div>
+            <p className="micro text-muted">A walkable expo for startups</p>
+            <h1 className="mt-4 font-display text-4xl leading-tight sm:text-5xl">
+              A trade-show floor that never tears down.
+            </h1>
+            <p className="mt-5 max-w-xl text-base leading-relaxed text-muted">
+              FounderFloor is a small 2D world where startups keep a booth and
+              founders actually stand at it. You walk around, you read the
+              signs, you talk to people. Ranks come from verified revenue, so
+              the booth with the gold badge earned it the boring way.
+            </p>
             <p className="micro mt-3 text-muted">
-              Main Hall, ambient view. The real one takes arrow keys or taps.
+              Verification is simulated in this demo. The skepticism is real.
+            </p>
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <Link
+                href="/lobby"
+                className="rounded-md bg-accent px-5 py-2.5 text-sm font-medium text-white hover:bg-accent/90"
+              >
+                Walk the floor
+              </Link>
+              <Link
+                href="/profile"
+                className="rounded-md border border-ink px-5 py-2.5 text-sm font-medium text-ink hover:bg-panel"
+              >
+                Set up a booth
+              </Link>
+            </div>
+            <p className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted">
+              <span className="flex items-center gap-1.5">
+                <Kbd>W A S D</Kbd> walk
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Kbd>E</Kbd> talk
+              </span>
+              <span>Nothing to install.</span>
+            </p>
+          </div>
+          <div>
+            <HeroScene className="lg:h-[400px]" />
+            <p className="micro mt-3 text-muted">
+              Main Hall, ambient view. The real one takes WASD, arrow keys, or
+              taps.
             </p>
           </div>
         </div>

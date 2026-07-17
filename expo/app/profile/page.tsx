@@ -358,13 +358,34 @@ export default function ProfilePage() {
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-12">
       <h1 className="font-display text-3xl">Profile</h1>
 
+      {/* jump nav — the page runs eight sections deep, and most visits are
+          for exactly one of them (usually the booth editor) */}
+      <nav aria-label="Profile sections" className="-mt-2 flex flex-wrap gap-1.5">
+        {[
+          ["identity", "Identity"],
+          ["booth", "My booth"],
+          ["verification", "Verification"],
+          ["membership", "Membership"],
+          ["quests", "Quests"],
+          ["connections", "Connections"],
+        ].map(([id, label]) => (
+          <a
+            key={id}
+            href={`#${id}`}
+            className="rounded-md border border-line px-2.5 py-1 text-xs text-muted hover:border-ink hover:text-ink"
+          >
+            {label}
+          </a>
+        ))}
+      </nav>
+
       {/* ---- Account ---- */}
       <SectionCard title="Account">
         <AccountCard onIdentity={actions.setIdentity} currentName={state.profile.name} />
       </SectionCard>
 
       {/* ---- Identity ---- */}
-      <SectionCard title="Identity">
+      <SectionCard title="Identity" id="identity">
         <div className="flex flex-col gap-5">
           <div>
             <label htmlFor="profile-name" className="micro mb-1.5 block text-muted">
@@ -444,7 +465,7 @@ export default function ProfilePage() {
       </SectionCard>
 
       {/* ---- Quests ---- */}
-      <SectionCard title="Quests">
+      <SectionCard title="Quests" id="quests">
         <ul className="divide-y divide-line">
           {questList.map((q) => (
             <li key={q.def.id} className="flex items-center gap-3 py-2.5">
@@ -475,7 +496,7 @@ export default function ProfilePage() {
       </SectionCard>
 
       {/* ---- My booth ---- */}
-      <SectionCard title="My booth">
+      <SectionCard title="My booth" id="booth">
         <div className="grid gap-6 md:grid-cols-[1fr,220px]">
           <div className="flex flex-col gap-4">
             <div>
@@ -732,7 +753,7 @@ export default function ProfilePage() {
       </SectionCard>
 
       {/* ---- Verification ---- */}
-      <SectionCard title="Verification">
+      <SectionCard title="Verification" id="verification">
         <p className="text-sm leading-relaxed text-muted">
           In live mode your rank comes from a read-only Stripe connection —
           this build simulates it, so type whatever you can live with.
@@ -905,7 +926,7 @@ export default function ProfilePage() {
       </SectionCard>
 
       {/* ---- Connections ---- */}
-      <SectionCard title="Connections">
+      <SectionCard title="Connections" id="connections">
         {state.connections.length === 0 ? (
           <p className="text-sm text-muted">
             No connections yet. Go talk to somebody.

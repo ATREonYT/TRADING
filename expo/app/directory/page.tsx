@@ -17,6 +17,7 @@ import { TIER_LABEL } from "@/components/TierTag";
 import RankBadge from "@/components/RankBadge";
 import TierTag from "@/components/TierTag";
 import { usePresence } from "@/components/usePresence";
+import { useCommunityStartups } from "@/components/useCommunityStartups";
 
 // startupId -> the floor whose startupIds list it (module scope, computed once)
 const FLOOR_OF: Record<string, FloorDef> = (() => {
@@ -27,11 +28,26 @@ const FLOOR_OF: Record<string, FloorDef> = (() => {
   return out;
 })();
 
-const CATEGORIES: string[] = Array.from(
+const FLOOR_BY_ID: Record<string, FloorDef> = Object.fromEntries(
+  FLOORS.map((f) => [f.id, f]),
+);
+
+const SEED_CATEGORIES: string[] = Array.from(
   new Set(Object.values(STARTUPS).map((s) => s.category)),
-).sort();
+);
 
 const MIN_RANKS = RANKS.filter((r) => r.id > 0);
+
+/** One directory row — seed startup or a live community stand, unified. */
+interface DirRow {
+  key: string;
+  startup: Startup;
+  floor: FloorDef | undefined;
+  community: boolean;
+  /** Deep-link target: seed rows walk by id, community rows by spot index. */
+  href: string;
+  online: boolean;
+}
 
 function chipClass(active: boolean): string {
   return `min-h-[40px] rounded-md border px-3 py-2 text-xs ${
@@ -47,12 +63,59 @@ export default function DirectoryPage() {
   const [seeking, setSeeking] = useState(false);
   const [minRank, setMinRank] = useState<RankId | null>(null);
   const presence = usePresence();
+  const community = useCommunityStartups();
   const [state] = useAppState();
 
-  const results: Startup[] = useMemo(() => {
+  // Seed + community stands as one list. A founder's own stand can appear on
+  // both (seed floors are fixed data; their live claim is separate) — key by
+  // startup id so the community entry wins and nothing double-lists.
+  const allRows: DirRow[] = useMemo(() => {
+    const rows: DirRow[] = [];
+    for (const s of Object.values(STARTUPS)) {
+      const floor = FLOOR_OF[s.id];
+      rows.push({
+        key: s.id,
+        startup: s,
+        floor,
+        community: false,
+        href: floor ? `/floor/${floor.id}?booth=${encodeURIComponent(s.id)}` : "#",
+        online: false,
+      });
+    }
+    for (const c of community) {
+      const floor = FLOOR_BY_ID[c.floorId];
+      rows.push({
+        key: c.startup.id,
+        startup: c.startup,
+        floor,
+        community: true,
+        href: floor ? `/floor/${c.floorId}?spot=${c.spotIndex}` : "#",
+        online: c.online,
+      });
+    }
+    return rows;
+  }, [community]);
+
+  // Category chips grow from whatever founders actually signed up under —
+  // seed categories first (stable order), then any new community ones.
+  const categories: string[] = useMemo(() => {
+    const seen = new Set(SEED_CATEGORIES);
+    const extra: string[] = [];
+    for (const r of allRows) {
+      const cat = r.startup.category;
+      if (cat && !seen.has(cat)) {
+        seen.add(cat);
+        extra.push(cat);
+      }
+    }
+    return [...SEED_CATEGORIES].sort().concat(extra.sort());
+  }, [allRows]);
+
+  const results: DirRow[] = useMemo(() => {
     const term = q.trim().toLowerCase();
-    return Object.values(STARTUPS)
-      .filter((s) => {
+    return allRows
+      .filter((r) => {
+        const s = r.startup;
         if (category !== null && s.category !== category) return false;
         if (seeking && !s.seekingCofounder) return false;
         if (minRank !== null && rankFor(s.verifiedRevenue).id < minRank) return false;
@@ -64,18 +127,28 @@ export default function DirectoryPage() {
       })
       .sort(
         (a, b) =>
-          b.verifiedRevenue - a.verifiedRevenue || a.name.localeCompare(b.name),
+          // live community stands float up, then by revenue, then name
+          Number(b.online) - Number(a.online) ||
+          b.startup.verifiedRevenue - a.startup.verifiedRevenue ||
+          a.startup.name.localeCompare(b.startup.name),
       );
-  }, [q, category, seeking, minRank]);
+  }, [allRows, q, category, seeking, minRank]);
 
-  const total = Object.keys(STARTUPS).length;
+  const total = allRows.length;
+  const communityCount = community.length;
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-12">
       <h1 className="font-display text-3xl">Directory</h1>
       <p className="mt-2 text-sm leading-relaxed text-muted">
-        All {total} booths across {FLOORS.length} floors, on paper. Search,
-        filter, then go stand in front of one.
+        Every booth across {FLOORS.length} floors — the{" "}
+        {Object.keys(STARTUPS).length} regulars
+        {communityCount > 0
+          ? `, plus ${communityCount} new founder-made ${
+              communityCount === 1 ? "stand" : "stands"
+            }`
+          : " — and every stand a founder sets up shows up here on its own"}
+        . Search, filter, then go stand in front of one.
       </p>
 
       <div className="mt-6 flex flex-col gap-3">
@@ -95,7 +168,7 @@ export default function DirectoryPage() {
         </div>
 
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Category filter">
-          {CATEGORIES.map((c) => (
+          {categories.map((c) => (
             <button
               key={c}
               type="button"
@@ -136,6 +209,7 @@ export default function DirectoryPage() {
         {results.length === total
           ? `${total} startups`
           : `${results.length} of ${total} startups`}
+        {category !== null && ` · ${category}`}
       </p>
 
       {results.length === 0 ? (
@@ -145,18 +219,24 @@ export default function DirectoryPage() {
         </p>
       ) : (
         <ul className="mt-2 divide-y divide-line border-y border-line">
-          {results.map((s) => {
-            const floor = FLOOR_OF[s.id];
+          {results.map((r) => {
+            const s = r.startup;
+            const floor = r.floor;
             const here = floor ? presence[floor.id] ?? 0 : 0;
             return (
               <li
-                key={s.id}
+                key={r.key}
                 className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center"
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="font-display text-lg leading-snug">{s.name}</h2>
                     <RankBadge revenue={s.verifiedRevenue} />
+                    {r.community && (
+                      <span className="micro rounded-sm border border-accent/40 px-1.5 py-0.5 text-accent">
+                        {r.online ? "Here now" : "New booth"}
+                      </span>
+                    )}
                     {s.seekingCofounder && (
                       <span className="micro rounded-sm border border-verify/40 px-1.5 py-0.5 text-verify">
                         Seeking co-founder
@@ -185,9 +265,9 @@ export default function DirectoryPage() {
                     </span>
                     {TIER_ORDER[state.sub] >= TIER_ORDER[floor.tier] ? (
                       <Link
-                        // ?booth deep link: the floor page auto-walks you from
-                        // the door to this startup's stand.
-                        href={`/floor/${floor.id}?booth=${encodeURIComponent(s.id)}`}
+                        // deep link: the floor page auto-walks you from the
+                        // door to this stand (?booth for seed, ?spot for live)
+                        href={r.href}
                         className="rounded-md border border-ink px-3 py-2 text-sm hover:bg-panel"
                       >
                         Walk there

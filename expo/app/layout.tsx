@@ -67,7 +67,9 @@ export default function RootLayout({
         <Messenger />
 
         <footer className="border-t border-line bg-panel">
-          <div className="mx-auto flex w-full max-w-5xl flex-col gap-1 px-4 py-6 text-sm text-muted sm:flex-row sm:items-baseline sm:justify-between">
+          {/* pb-20 on phones keeps the fixed chat button from sitting on the
+              footer text; desktops have room to spare */}
+          <div className="mx-auto flex w-full max-w-5xl flex-col gap-1 px-4 pb-20 pt-6 text-sm text-muted sm:flex-row sm:items-baseline sm:justify-between sm:pb-6">
             <p>
               Built by one person and a robot.{" "}
               <Link href="/about" className="underline hover:text-ink">

@@ -869,12 +869,19 @@ export default function FloorPage({ params }: { params: { id: string } }) {
 
     // Directory deep link: /floor/<id>?booth=<startupId> auto-walks you from
     // the spawn point up to the booth you searched for.
-    const boothParam = new URLSearchParams(window.location.search).get("booth");
+    const search = new URLSearchParams(window.location.search);
+    const boothParam = search.get("booth");
+    const spotParam = search.get("spot");
     if (boothParam) {
       // seedSpotIndex accounts for reservedSpot — a raw startupIds.indexOf
       // drifts one spot off on floors whose reserved spot sits mid-list
       const spotIndex = seedSpotIndex(f, boothParam);
       if (spotIndex >= 0) handle.walkToBooth(spotIndex);
+    } else if (spotParam) {
+      // Community stands aren't in startupIds — the directory deep-links them
+      // by their claimed spot index directly.
+      const spotIndex = Number(spotParam);
+      if (Number.isInteger(spotIndex) && spotIndex >= 0) handle.walkToBooth(spotIndex);
     }
 
     // strict-mode double-mount is handled by this cleanup running between passes
