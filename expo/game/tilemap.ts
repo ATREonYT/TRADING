@@ -24,6 +24,13 @@ export interface Cam {
 /** A y-sortable world object; the engine merges these with avatars. */
 export interface Drawable {
   sortY: number;
+  /**
+   * Horizontal extent in world px, when known — lets the engine skip
+   * drawables that are off-screen sideways (the y-band cull alone repaints
+   * the full width of the hall every frame on wide floors).
+   */
+  minX?: number;
+  maxX?: number;
   draw(ctx: CanvasRenderingContext2D): void;
 }
 
@@ -44,7 +51,7 @@ export interface BuiltFloor {
   booths: BoothInstance[];
   /** Tile-coordinate walkability. Out-of-bounds counts as solid. */
   solid(tx: number, ty: number): boolean;
-  /** Floor, carpets and mats — everything avatars stand on. */
+  /** Floor, carpets and mats — everything avatars stand on. Camera-culled. */
   drawUnder(ctx: CanvasRenderingContext2D, cam: Cam): void;
   /** Walls, banners, counters, props — pre-sorted by sortY ascending. */
   drawables: Drawable[];
@@ -178,6 +185,8 @@ export function buildFloor(
     mark(wt.x, wt.y);
     drawables.push({
       sortY: (wt.y + 1) * T,
+      minX: wt.x * T,
+      maxX: (wt.x + 1) * T,
       draw(ctx) {
         ctx.fillStyle = wallBody;
         ctx.fillRect(wt.x * T, wt.y * T, T, T);
@@ -200,6 +209,8 @@ export function buildFloor(
     const x0 = px * T + 6 + Math.floor(posterRng() * 8);
     drawables.push({
       sortY: 1 * T, // same layer as the top wall
+      minX: x0 - 2,
+      maxX: x0 + 22,
       draw(ctx) {
         const ph = tall ? 22 : 18;
         ctx.fillStyle = shade(face, -0.35);
@@ -346,14 +357,24 @@ export function buildFloor(
         ctx.fillRect(tx * T, ty * T, T, T);
       }
     }
-    // carpets: booth zone + 1-tile apron row below (4 x 4 tiles)
+    // carpets: booth zone + 1-tile apron row below (4 x 4 tiles) — only the
+    // ones actually in view; painting every booth's carpet each frame is
+    // most of the ground cost on wide floors
     for (const b of booths) {
+      const bx = b.spot.x * T;
+      const by = b.spot.y * T;
+      if (bx + 4 * T < cam.x || bx > cam.x + cam.w || by + 4 * T < cam.y || by > cam.y + cam.h) {
+        continue;
+      }
       if (b.startup) drawCarpet(ctx, b.spot.x, b.spot.y, b.startup.booth.carpet, b.startup.booth.pattern);
       else drawCarpet(ctx, b.spot.x, b.spot.y, VACANT_FACE);
     }
     // mats — woven doormats, not flat rectangles (a plain fill at 2x zoom
     // reads as an unfinished placeholder)
     for (const m of mats) {
+      if (m.x * T + 2 * T < cam.x || m.x * T > cam.x + cam.w || m.y * T + T < cam.y || m.y * T > cam.y + cam.h) {
+        continue;
+      }
       const mx = m.x * T + 3;
       const my = m.y * T + 4;
       const mw = 2 * T - 6;
@@ -427,6 +448,8 @@ function bannerDrawable(b: BoothInstance & { startup: Startup }): Drawable {
   const yours = b.isYours;
   return {
     sortY: (sy + 1) * T,
+    minX: bx - 2,
+    maxX: bx + 4 * T + 2,
     draw(ctx) {
       // structural back wall
       ctx.fillStyle = dark;
@@ -472,6 +495,8 @@ function counterDrawable(b: BoothInstance & { startup: Startup }): Drawable {
   const mugSlot = (flyerSlot + 1 + Math.floor(r() * 2)) % 4;
   const mugColor = shade(b.startup.booth.banner, -0.1);
   return {
+    minX: bx - 2,
+    maxX: bx + 4 * T + 2,
     sortY: (sy + 3) * T,
     draw(ctx) {
       drawCounterBase(ctx, bx, y0);
@@ -522,6 +547,8 @@ function vacantBannerDrawable(v: { x: number; y: number }): Drawable {
   const dark = shade(VACANT_FACE, -0.35);
   return {
     sortY: (v.y + 1) * T,
+    minX: bx - 2,
+    maxX: bx + 4 * T + 2,
     draw(ctx) {
       ctx.fillStyle = dark;
       ctx.fillRect(bx, by, 4 * T, T);
@@ -544,6 +571,8 @@ function vacantCounterDrawable(v: { x: number; y: number }): Drawable {
   const y0 = (v.y + 2) * T;
   return {
     sortY: (v.y + 3) * T,
+    minX: bx - 2,
+    maxX: bx + 4 * T + 2,
     draw(ctx) {
       drawCounterBase(ctx, bx, y0);
       // a single leftover flyer
@@ -564,6 +593,8 @@ function plantDrawable(tx: number, ty: number, variant: number): Drawable {
   const tall = variant > 0.5;
   return {
     sortY: (ty + 1) * T,
+    minX: x - 2,
+    maxX: x + T + 2,
     draw(ctx) {
       // pot
       ctx.fillStyle = shade(POT, -0.25);
@@ -591,6 +622,8 @@ function benchDrawable(tx: number, ty: number): Drawable {
   const y = ty * T;
   return {
     sortY: (ty + 1) * T,
+    minX: x - 2,
+    maxX: x + 2 * T + 2,
     draw(ctx) {
       ctx.fillStyle = shade(WOOD_FRONT, -0.3);
       ctx.fillRect(x + 5, y + 20, 3, 7);
@@ -611,6 +644,8 @@ function cartDrawable(tx: number, ty: number): Drawable {
   const y = ty * T;
   return {
     sortY: (ty + 1) * T,
+    minX: x - 4,
+    maxX: x + 2 * T + 4,
     draw(ctx) {
       // awning
       for (let i = 0; i < 8; i++) {

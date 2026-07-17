@@ -570,15 +570,58 @@ export function createGame(opts: GameOptions): GameHandle {
   let dpr = 1;
   let cssW = canvas.clientWidth || 640;
   let cssH = canvas.clientHeight || 480;
+  /**
+   * Adaptive resolution. Frame cost is dominated by canvas raster/composite
+   * pixels, not our JS (measured ~3ms JS vs 50ms+ frames on software
+   * rendering) — so when sustained frame times say the machine can't keep
+   * up, step the backing-store resolution down a rung and let the
+   * compositor stretch it. Every rung keeps an integer device-px per world
+   * px (4, 3, 2, 1), so the pixel art stays crisp — the last rungs just
+   * look chunkier, which beats a slideshow. Starts at 2: dpr-3 phones pay
+   * 2.25x the pixels for fidelity ZOOM-2 pixel art can't show anyway.
+   */
+  const DPR_LADDER = [2, 1.5, 1, 0.5] as const;
+  /**
+   * The learned rung persists across floor visits (localStorage) so a slow
+   * machine doesn't replay the "measure, then demote" dip on every load —
+   * the monitor keeps running, so a machine that got faster climbs back up
+   * and the stored value follows.
+   */
+  const RS_KEY = "founderfloor:renderscale";
+  let ladderIdx = 0;
+  let ladderLocked = false; // slowness resolution can't fix (30Hz display etc.)
+  try {
+    const raw = window.localStorage.getItem(RS_KEY);
+    const saved = raw ? (JSON.parse(raw) as { idx?: number; lock?: boolean }) : null;
+    if (saved && typeof saved.idx === "number") {
+      ladderIdx = Math.min(DPR_LADDER.length - 1, Math.max(0, Math.trunc(saved.idx)));
+    }
+    if (saved?.lock) ladderLocked = true;
+  } catch {
+    // storage blocked — just re-learn this session
+  }
+  const saveLadder = (): void => {
+    try {
+      window.localStorage.setItem(RS_KEY, JSON.stringify({ idx: ladderIdx, lock: ladderLocked }));
+    } catch {
+      // storage blocked — fine
+    }
+  };
+  /** Set by resize() when backing dims change; noteFrame resets its window. */
+  let backingChanged = false;
   const resize = (): void => {
-    dpr = Math.max(1, window.devicePixelRatio || 1);
+    dpr = Math.max(0.5, Math.min(DPR_LADDER[ladderIdx], window.devicePixelRatio || 1));
     cssW = canvas.clientWidth || cssW;
     cssH = canvas.clientHeight || cssH;
-    const bw = Math.max(1, Math.round(cssW * dpr));
-    const bh = Math.max(1, Math.round(cssH * dpr));
+    // floor, not round: content drawn under setTransform(dpr) covers at most
+    // cssW*dpr device px — a rounded-up backing store keeps a stripe of
+    // pixels no draw call can ever reach
+    const bw = Math.max(1, Math.floor(cssW * dpr));
+    const bh = Math.max(1, Math.floor(cssH * dpr));
     if (canvas.width !== bw || canvas.height !== bh) {
       canvas.width = bw;
       canvas.height = bh;
+      backingChanged = true;
     }
     ctx.imageSmoothingEnabled = false;
   };
@@ -700,6 +743,24 @@ export function createGame(opts: GameOptions): GameHandle {
     ctx.closePath();
   };
 
+  // measureText is slow enough to matter at N labels x 60fps; names and
+  // statuses barely ever change, so cache pill widths by content.
+  const labelWidths = new Map<string, number>();
+  const labelWidth = (name: string, st: string): number => {
+    const key = `${name}\n${st}`;
+    const hit = labelWidths.get(key);
+    if (hit !== undefined) return hit;
+    ctx.font = "10px system-ui, -apple-system, Segoe UI, sans-serif";
+    let w = ctx.measureText(name).width;
+    if (st) {
+      ctx.font = "9px system-ui, -apple-system, Segoe UI, sans-serif";
+      w = Math.max(w, Math.min(ctx.measureText(st).width, 140));
+    }
+    if (labelWidths.size > 300) labelWidths.clear(); // renames leak slowly
+    labelWidths.set(key, w);
+    return w;
+  };
+
   const drawLabel = (name: string, status: string | undefined, wx: number, wy: number): void => {
     const sx = Math.round((wx - cam.x) * ZOOM);
     const sy = Math.round((wy - SPRITE_H - cam.y) * ZOOM - 8);
@@ -707,13 +768,7 @@ export function createGame(opts: GameOptions): GameHandle {
     const st = status ? status.trim() : "";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = "10px system-ui, -apple-system, Segoe UI, sans-serif";
-    let w = ctx.measureText(name).width;
-    if (st) {
-      ctx.font = "9px system-ui, -apple-system, Segoe UI, sans-serif";
-      w = Math.max(w, Math.min(ctx.measureText(st).width, 140));
-    }
-    const bw = Math.ceil(w) + 12;
+    const bw = Math.ceil(labelWidth(name, st)) + 12;
     const bh = st ? LABEL_H_STATUS : LABEL_H;
     const bx = Math.round(sx - bw / 2);
     const by = sy - bh;
@@ -793,17 +848,31 @@ export function createGame(opts: GameOptions): GameHandle {
     cam.y = clampAxis(player.y - cam.h / 2, mapH, cam.h);
     // Snap the camera to the device-pixel grid — fractional camera positions
     // make the floor shimmer against pixel-snapped sprites (the "buggy walk").
+    // At fractional grids (dpr 1.5/1.25/0.5) Math.round can push a clamped
+    // camera OUTWARD past the map edge by half a device px; snap toward the
+    // interior at the upper clamp instead, or the ground stops short of the
+    // viewport edge and (with the letterbox skipped) leaves stale pixels.
     const grid = ZOOM * dpr;
     cam.x = Math.round(cam.x * grid) / grid;
     cam.y = Math.round(cam.y * grid) / grid;
+    if (cam.x > 0 && cam.x + cam.w > mapW) cam.x = Math.floor((mapW - cam.w) * grid) / grid;
+    if (cam.y > 0 && cam.y + cam.h > mapH) cam.y = Math.floor((mapH - cam.h) * grid) / grid;
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.imageSmoothingEnabled = false;
-    ctx.fillStyle = floor.theme.wall; // letterbox in wall color
-    ctx.fillRect(0, 0, cssW, cssH);
+    // Letterbox only when part of the viewport falls outside the map — on
+    // interior frames (the common case) the ground repaints everything and
+    // a redundant full-screen fill is real money on software rasterizers.
+    if (cam.x < 0 || cam.y < 0 || cam.x + cam.w > mapW || cam.y + cam.h > mapH) {
+      ctx.fillStyle = floor.theme.wall;
+      ctx.fillRect(0, 0, cssW, cssH);
+    }
 
     const s = dpr * ZOOM;
     ctx.setTransform(s, 0, 0, s, -cam.x * s, -cam.y * s);
+    // Ground: per-tile painting, viewport-culled inside (measured faster
+    // than blitting a pre-baked map canvas — software rasterizers pay more
+    // for large-source image sampling than for small solid fills).
     built.drawUnder(ctx, cam);
 
     // dynamic drawables (player, remotes, NPCs) merged with static scenery
@@ -827,6 +896,8 @@ export function createGame(opts: GameOptions): GameHandle {
 
     const lo = cam.y - 3 * TILE;
     const hi = cam.y + cam.h + 4 * TILE;
+    const left = cam.x - TILE;
+    const right = cam.x + cam.w + TILE;
     const statics = built.drawables;
     let i = 0;
     let j = 0;
@@ -836,7 +907,11 @@ export function createGame(opts: GameOptions): GameHandle {
       const pick = !b || (a !== null && a.sortY <= b.sortY) ? a : b;
       if (pick === a) i++;
       else j++;
-      if (pick && pick.sortY >= lo && pick.sortY <= hi) pick.draw(ctx);
+      if (!pick || pick.sortY < lo || pick.sortY > hi) continue;
+      // sideways cull: wide floors otherwise repaint every wall tile and
+      // booth in the y-band, most of them off-screen
+      if (pick.maxX !== undefined && (pick.maxX < left || (pick.minX ?? 0) > right)) continue;
+      pick.draw(ctx);
     }
 
     // screen-space pass: labels, bubbles, interaction nudge, minimap
@@ -895,12 +970,138 @@ export function createGame(opts: GameOptions): GameHandle {
 
   // ---------- loop / lifecycle ----------
 
+  // Adaptive-resolution monitor: watch the median frame delta over rolling
+  // 60-frame windows; a machine that can't hold ~40fps drops one resolution
+  // rung and re-measures. Warmup frames after mount/demotion are skipped
+  // (font/image decode jank would trigger false demotions).
+  const frameWin: number[] = [];
+  let warmupFrames = 12;
+  /** Set after a demotion so the next window can check it actually helped. */
+  let lastDemote: { fromIdx: number; p50: number } | null = null;
+  /** Set after a promotion so the next window can demote back if it tanked. */
+  let lastPromoteFrom: number | null = null;
+  /** Demotion needs two consecutive slow windows — one burst of jank
+   * (window drag, DevTools opening, a GC pause) must not demote a healthy
+   * machine. */
+  let slowPending = false;
+  /** Consecutive comfortably-fast windows at a demoted rung → try climbing. */
+  let fastWindows = 0;
+  /** A promotion that immediately re-demoted — stop ping-ponging. */
+  let promoteLocked = false;
+
+  const applyRung = (idx: number, why: string): void => {
+    ladderIdx = idx;
+    warmupFrames = 12;
+    slowPending = false;
+    fastWindows = 0;
+    resize();
+    saveLadder();
+    console.info(why);
+  };
+
+  const noteFrame = (rawMs: number): void => {
+    if (rawMs > 500) return; // returning from a hidden tab, not a slow frame
+    if (backingChanged) {
+      // A live resize reallocates the backing store per frame — those janky
+      // frames say nothing about steady-state cost. Start a fresh window.
+      backingChanged = false;
+      frameWin.length = 0;
+      warmupFrames = Math.max(warmupFrames, 12);
+      return;
+    }
+    if (warmupFrames > 0) {
+      warmupFrames--;
+      return;
+    }
+    frameWin.push(rawMs);
+    if (frameWin.length < 36) return;
+    const sorted = [...frameWin].sort((a, b) => a - b);
+    const p50 = sorted[18];
+    frameWin.length = 0;
+
+    // A demotion that didn't move the needle means the slowness isn't
+    // pixel-bound (30Hz display, throttled background tab, busy machine) —
+    // undo it and stop trading resolution for nothing. Persisted, so this
+    // hardware never replays the dip on later visits.
+    if (lastDemote) {
+      const { fromIdx, p50: before } = lastDemote;
+      lastDemote = null;
+      if (p50 > before * 0.85) {
+        ladderLocked = true;
+        applyRung(fromIdx, "[floor] lower render scale didn't help — restoring full resolution");
+        return;
+      }
+    }
+    // A promotion that brought the slowness back gets undone once, then
+    // promotions stop — the rung we're at is the machine's honest ceiling.
+    if (lastPromoteFrom !== null) {
+      const fromIdx = lastPromoteFrom;
+      lastPromoteFrom = null;
+      if (p50 > 25) {
+        promoteLocked = true;
+        applyRung(fromIdx, "[floor] full resolution didn't hold — staying at the lower render scale");
+        return;
+      }
+    }
+    if (ladderLocked) return;
+
+    const device = window.devicePixelRatio || 1;
+    const eff = (i: number): number => Math.max(0.5, Math.min(DPR_LADDER[i], device));
+
+    if (p50 > 25 && ladderIdx < DPR_LADDER.length - 1) {
+      fastWindows = 0;
+      if (!slowPending) {
+        slowPending = true; // demote only on the SECOND consecutive slow window
+        return;
+      }
+      slowPending = false;
+      // Frame cost scales with backing-store pixels (dpr^2) — jump straight
+      // to the rung projected to land under budget instead of stair-stepping
+      // through rungs a slideshow machine will fail anyway.
+      const prev = dpr;
+      let pick = ladderIdx;
+      for (let i = ladderIdx + 1; i < DPR_LADDER.length; i++) {
+        if (eff(i) >= prev) continue; // rung changes nothing on this machine
+        pick = i;
+        if (p50 * (eff(i) / prev) * (eff(i) / prev) <= 18) break; // ~55fps
+      }
+      if (pick === ladderIdx) return;
+      lastDemote = { fromIdx: ladderIdx, p50 };
+      applyRung(
+        pick,
+        `[floor] frames are slow here (median ${p50.toFixed(0)}ms) — lowering render scale to ${eff(pick)}x to keep movement smooth`,
+      );
+      return;
+    }
+
+    slowPending = false;
+    // Comfortably fast for three straight windows at a demoted rung — the
+    // slowness may have been transient (background task, thermal spike);
+    // climb one rung and re-measure.
+    if (p50 <= 10 && ladderIdx > 0 && !promoteLocked) {
+      if (++fastWindows < 3) return;
+      let target = ladderIdx;
+      for (let i = ladderIdx - 1; i >= 0; i--) {
+        if (eff(i) > eff(ladderIdx)) {
+          target = i;
+          break; // nearest rung that actually adds pixels on this machine
+        }
+      }
+      if (target === ladderIdx) return;
+      lastPromoteFrom = ladderIdx;
+      applyRung(target, `[floor] frames are fast again — raising render scale to ${eff(target)}x`);
+    } else {
+      fastWindows = 0;
+    }
+  };
+
   let raf = 0;
   let last = performance.now();
   let destroyed = false;
   const tick = (now: number): void => {
     if (destroyed) return;
     raf = requestAnimationFrame(tick);
+    noteFrame(now - last);
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     step(dt);
