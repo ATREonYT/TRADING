@@ -101,6 +101,8 @@ export default function FloorPage({ params }: { params: { id: string } }) {
   // Touch users have no M key; this mirrors the engine's on-when-map-overflows
   // default (true on any phone-sized viewport) and drives the "map" button.
   const [minimapOn, setMinimapOn] = useState(true);
+  /** Session mute list (wire ids) — their chat, DMs, bubbles and emotes hide. */
+  const [mutedIds, setMutedIds] = useState<ReadonlySet<string>>(new Set());
 
   // ---- refs (stable across the game's lifetime) ----
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -133,6 +135,8 @@ export default function FloorPage({ params }: { params: { id: string } }) {
   tabRef.current = tab;
   const connectionsRef = useRef(state.connections);
   connectionsRef.current = state.connections;
+  const mutedRef = useRef(mutedIds);
+  mutedRef.current = mutedIds;
   const badgesRef = useRef(state.badges);
   badgesRef.current = state.badges;
 
@@ -243,6 +247,31 @@ export default function FloorPage({ params }: { params: { id: string } }) {
   );
   const connectedIdsRef = useRef(connectedIds);
   connectedIdsRef.current = connectedIds;
+
+  // ---- moderation: session mute + report (player threads) ----
+
+  const toggleMute = useCallback((threadKey: string) => {
+    const th = threadsRef.current[threadKey];
+    const peerId = th?.peerId;
+    if (!peerId) return;
+    setMutedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(peerId)) next.delete(peerId);
+      else next.add(peerId);
+      handleRef.current?.setMuted([...next]);
+      return next;
+    });
+  }, []);
+
+  const reportPeer = useCallback(
+    (threadKey: string) => {
+      const th = threadsRef.current[threadKey];
+      if (!th?.peerId) return;
+      netRef.current?.sendReport(th.peerId, `reported from DM with "${th.label}"`);
+      showToast("Reported. The operator will take a look.");
+    },
+    [showToast],
+  );
 
   const handleConnect = useCallback(
     (s: Startup, ownerId?: string) => {
@@ -535,11 +564,15 @@ export default function FloorPage({ params }: { params: { id: string } }) {
       if (ev.t === "chat" && ev.msg.scope === "floor") {
         // Filter our own echo by the server-assigned wire identity only —
         // a second tab shares the same profile id but gets its own selfId.
-        if (ev.msg.fromId !== net.selfId) setFloorMsgs((m) => [...m.slice(-199), ev.msg]);
+        // Muted players' messages are dropped entirely.
+        if (ev.msg.fromId !== net.selfId && !mutedRef.current.has(ev.msg.fromId)) {
+          setFloorMsgs((m) => [...m.slice(-199), ev.msg]);
+        }
       }
       if (ev.t === "chat" && ev.msg.scope === "dm") {
         // Our own echo — we already appended locally when sending.
         if (ev.msg.fromId === net.selfId) return;
+        if (mutedRef.current.has(ev.msg.fromId)) return; // muted peer
         const peer = ev.msg.peerId ?? ev.msg.fromId;
         if (!peer) return;
         const key = `player:${peer}`;
@@ -747,6 +780,7 @@ export default function FloorPage({ params }: { params: { id: string } }) {
       typing: t.typing,
       unread: t.unread,
       left: t.left ?? false,
+      muted: t.peerId !== undefined && mutedIds.has(t.peerId),
       connected:
         t.kind === "npc"
           ? t.startupId !== undefined && connectedIds.has(t.startupId)
@@ -857,7 +891,16 @@ export default function FloorPage({ params }: { params: { id: string } }) {
                   : startups[activeBooth.startup.id] ?? activeBooth.startup
               }
               isYours={activeBooth.isYours}
-              live={Boolean(activeBooth.ownerId) && !activeBooth.isYours}
+              live={
+                Boolean(activeBooth.ownerId) &&
+                !activeBooth.isYours &&
+                activeBooth.ownerOnline !== false
+              }
+              ownerAway={
+                Boolean(activeBooth.ownerId) &&
+                !activeBooth.isYours &&
+                activeBooth.ownerOnline === false
+              }
               connected={
                 activeBooth.ownerId && !activeBooth.isYours
                   ? state.connections.some((c) => c.peerId === activeBooth.ownerId)
@@ -909,6 +952,8 @@ export default function FloorPage({ params }: { params: { id: string } }) {
             onFocusChange={handleFocusChange}
             onConnect={connectThreadKey}
             onClose={closeThread}
+            onToggleMute={toggleMute}
+            onReport={reportPeer}
           />
         </div>
         <div className="order-2 flex items-stretch gap-2 sm:order-none">

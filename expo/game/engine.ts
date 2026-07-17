@@ -70,14 +70,15 @@ export function createGame(opts: GameOptions): GameHandle {
   // ---------- floor build (rebuilt whenever a stand is claimed / packed up) ----------
 
   let myClaim: BoothClaim | null = opts.myClaim ?? null;
-  const remoteClaims = new Map<string, BoothClaim>(); // ownerId -> claim
+  /** ownerId (stable profile id) -> stand; survives the owner leaving ("away"). */
+  const remoteClaims = new Map<string, { claim: BoothClaim; ownerName: string; online: boolean }>();
 
   const claimEntries = (): ClaimEntry[] => {
     const list: ClaimEntry[] = [];
-    if (myClaim) list.push({ claim: myClaim, isYours: true, ownerId: net.selfId });
-    for (const [ownerId, claim] of remoteClaims) {
-      if (ownerId === net.selfId) continue;
-      list.push({ claim, isYours: false, ownerId });
+    if (myClaim) list.push({ claim: myClaim, isYours: true, ownerId: me.id, ownerName: me.name });
+    for (const [ownerId, st] of remoteClaims) {
+      if (ownerId === me.id) continue;
+      list.push({ claim: st.claim, isYours: false, ownerId, ownerName: st.ownerName, online: st.online });
     }
     return list;
   };
@@ -99,6 +100,9 @@ export function createGame(opts: GameOptions): GameHandle {
 
   let firstMoveDone = false;
   let firstEmoteDone = false;
+
+  /** Wire ids whose bubbles/emotes are hidden (session mute list, set by the UI). */
+  const muted = new Set<string>();
 
   // ---------- collision ----------
 
@@ -246,8 +250,9 @@ export function createGame(opts: GameOptions): GameHandle {
         for (const p of ev.players) addRemote(p);
         remoteClaims.clear();
         for (const b of ev.booths) {
-          if (b.ownerId !== net.selfId && !prevSelfIds.has(b.ownerId)) {
-            remoteClaims.set(b.ownerId, b.claim);
+          // stands are keyed by stable profile id — mine is rendered via myClaim
+          if (b.ownerId !== me.id) {
+            remoteClaims.set(b.ownerId, { claim: b.claim, ownerName: b.ownerName, online: b.online });
           }
         }
         prevSelfIds.add(net.selfId); // a later reconnect can filter this ghost
@@ -266,13 +271,12 @@ export function createGame(opts: GameOptions): GameHandle {
       case "player_leave":
         remotes.delete(ev.id);
         bubbles.remove(ev.id);
-        // their stand packs up with them
-        if (remoteClaims.delete(ev.id)) rebuild();
+        // their stand STAYS — the server re-announces it as away (booth_set)
         presence();
         break;
       case "booth_set":
-        if (ev.ownerId !== net.selfId) {
-          remoteClaims.set(ev.ownerId, ev.claim);
+        if (ev.ownerId !== me.id) {
+          remoteClaims.set(ev.ownerId, { claim: ev.claim, ownerName: ev.ownerName, online: ev.online });
           rebuild();
         }
         break;
@@ -283,7 +287,7 @@ export function createGame(opts: GameOptions): GameHandle {
         break; // the UI reverts the claim and explains
       case "emote":
         // own emotes are rendered at send time; the echo must not double-render
-        if (ev.id !== net.selfId && remotes.has(ev.id)) {
+        if (ev.id !== net.selfId && remotes.has(ev.id) && !muted.has(ev.id)) {
           bubbles.showEmote(ev.id, EMOTE_CHARS[ev.kind], performance.now());
         }
         break;
@@ -299,7 +303,7 @@ export function createGame(opts: GameOptions): GameHandle {
         break;
       case "chat":
         // remote floor chat auto-bubbles; the transcript is the UI's problem
-        if (ev.msg.scope === "floor" && remotes.has(ev.msg.fromId)) {
+        if (ev.msg.scope === "floor" && remotes.has(ev.msg.fromId) && !muted.has(ev.msg.fromId)) {
           bubbles.showChat(ev.msg.fromId, ev.msg.text, performance.now());
         }
         break;
@@ -926,6 +930,13 @@ export function createGame(opts: GameOptions): GameHandle {
     },
     setMinimap(v: boolean): void {
       minimapOn = v;
+    },
+    setMuted(ids: string[]): void {
+      muted.clear();
+      for (const id of ids) {
+        muted.add(id);
+        bubbles.remove(id); // anything they're mid-saying disappears too
+      }
     },
     walkToBooth(spotIndex: number): void {
       const b = built.booths.find((x) => x.spotIndex === spotIndex);

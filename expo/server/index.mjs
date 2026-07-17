@@ -19,13 +19,19 @@
  *     { t: "emote", kind }             (one of the five EmoteKinds; 3/s per client)
  *     { t: "sign", key, text, boothName? } (guestbook entry; key <= 64, text <= 200,
  *                                      boothName <= 40 — display name for the ticker line)
+ *     { t: "report", targetId, reason } (stored in floor-data.json for the operator; 1/10s)
  *   server -> client:
- *     { t: "welcome", selfId, players, booths, activity }   (activity oldest first)
+ *     { t: "welcome", selfId, players, booths, activity }   (activity oldest first;
+ *                                      booths = persistent stands with ownerName + online)
  *     { t: "player_join", player: RemotePlayer }
  *     { t: "player_move", id, s: MoveState }
- *     { t: "player_leave", id }        (a leaver's stand packs up with them)
- *     { t: "booth_set", ownerId, claim }
+ *     { t: "player_leave", id }        (their stand STAYS, re-announced online:false)
+ *     { t: "booth_set", ownerId, ownerName, online, claim }  (ownerId = stable profile id)
  *     { t: "booth_clear", ownerId }
+ *
+ * Stands persist across owner absence (floor-data.json) and expire after 7
+ * days without a visit. A join without a claim from a profile that has a
+ * stored stand removes it — the client's saved state is the source of truth.
  *     { t: "booth_denied", spotIndex }  (only to a claimant whose spot was taken)
  *     { t: "emote", id, kind }          (echoed to the sender too)
  *     { t: "guestbook", key, entry }    (a new entry landed at a booth)
@@ -83,6 +89,20 @@ const rooms = new Map();
 
 /** guestbooks: floorId -> Map<key, GuestbookEntry[]> — entries newest first, <= 50. */
 const guestbooks = new Map();
+
+/**
+ * stands: floorId -> Map<profileId, { claim, ownerName, lastSeen }> — claimed
+ * booths persist while their owner is away (shown as "away" stands) and expire
+ * after STAND_TTL_MS without a visit. Keyed by the STABLE profile id (rawId),
+ * not the per-connection wire id, so reconnects and second tabs re-own them.
+ */
+const stands = new Map();
+const STAND_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const MAX_STANDS_PER_FLOOR = 64;
+
+/** reports: flat list for the operator to review by hand, cap 500. */
+let reports = [];
+const MAX_REPORTS = 500;
 
 /** activity: floorId -> ActivityItem[] — oldest first, <= 20. */
 const activity = new Map();
@@ -148,6 +168,32 @@ function loadData() {
     }
   }
 
+  if (parsed.stands && typeof parsed.stands === "object") {
+    const cutoff = Date.now() - STAND_TTL_MS;
+    for (const [floorId, byOwner] of Object.entries(parsed.stands)) {
+      if (!byOwner || typeof byOwner !== "object") continue;
+      const map = new Map();
+      for (const [ownerId, st] of Object.entries(byOwner)) {
+        if (!st || typeof st !== "object" || typeof st.lastSeen !== "number") continue;
+        if (st.lastSeen < cutoff) continue; // expired while the server was down
+        const claim = sanitizeClaim(st.claim);
+        if (!claim) continue;
+        map.set(ownerId.slice(0, MAX_ID_LEN), {
+          claim,
+          ownerName: typeof st.ownerName === "string" ? st.ownerName.slice(0, MAX_NAME_LEN) : "founder",
+          lastSeen: st.lastSeen,
+        });
+      }
+      if (map.size) stands.set(floorId.slice(0, MAX_ID_LEN), map);
+    }
+  }
+
+  if (Array.isArray(parsed.reports)) {
+    reports = parsed.reports
+      .filter((r) => r && typeof r === "object" && typeof r.ts === "number")
+      .slice(-MAX_REPORTS);
+  }
+
   if (parsed.activity && typeof parsed.activity === "object") {
     for (const [floorId, items] of Object.entries(parsed.activity)) {
       if (!Array.isArray(items)) continue;
@@ -183,6 +229,10 @@ function saveNow() {
       [...guestbooks].map(([floorId, books]) => [floorId, Object.fromEntries(books)]),
     ),
     activity: Object.fromEntries(activity),
+    stands: Object.fromEntries(
+      [...stands].map(([floorId, byOwner]) => [floorId, Object.fromEntries(byOwner)]),
+    ),
+    reports,
   };
   const tmp = `${DATA_FILE}.tmp`;
   try {
@@ -304,21 +354,53 @@ function isValidGuestbookKey(key) {
   return ID_KEY.test(key);
 }
 
-/** All live claims in a room, excluding one player. */
-function roomBooths(room, exceptId) {
-  const out = [];
+/** Is any live client in the room connected under this profile id? */
+function ownerOnline(room, profileId) {
+  if (!room) return false;
   for (const c of room.values()) {
-    if (c.id !== exceptId && c.claim) out.push({ ownerId: c.id, claim: c.claim });
+    if (c.rawId === profileId) return true;
+  }
+  return false;
+}
+
+/** All persistent stands on a floor, excluding one profile — with liveness. */
+function floorBooths(floorId, room, exceptProfileId) {
+  const byOwner = stands.get(floorId);
+  if (!byOwner) return [];
+  const out = [];
+  for (const [ownerId, st] of byOwner) {
+    if (ownerId === exceptProfileId) continue;
+    out.push({ ownerId, ownerName: st.ownerName, online: ownerOnline(room, ownerId), claim: st.claim });
   }
   return out;
 }
 
-function spotTakenBy(room, spotIndex, exceptId) {
-  for (const c of room.values()) {
-    if (c.id !== exceptId && c.claim && c.claim.spotIndex === spotIndex) return c.id;
+/** Which profile holds this spot (live or away), excluding one profile. */
+function spotTakenBy(floorId, spotIndex, exceptProfileId) {
+  const byOwner = stands.get(floorId);
+  if (!byOwner) return null;
+  for (const [ownerId, st] of byOwner) {
+    if (ownerId !== exceptProfileId && st.claim.spotIndex === spotIndex) return ownerId;
   }
   return null;
 }
+
+/** Drop stands whose owner hasn't visited in STAND_TTL_MS. Runs hourly. */
+function pruneStands() {
+  const cutoff = Date.now() - STAND_TTL_MS;
+  for (const [floorId, byOwner] of stands) {
+    const room = rooms.get(floorId);
+    for (const [ownerId, st] of byOwner) {
+      if (st.lastSeen < cutoff && !ownerOnline(room, ownerId)) {
+        byOwner.delete(ownerId);
+        if (room) broadcast(room, { t: "booth_clear", ownerId });
+        scheduleSave();
+      }
+    }
+    if (byOwner.size === 0) stands.delete(floorId);
+  }
+}
+setInterval(pruneStands, 60 * 60 * 1000).unref();
 
 // ---------- wire helpers ----------
 
@@ -490,7 +572,7 @@ wss.on("connection", (ws, req) => {
     let id = rawId;
     for (let n = 2; room.has(id); n++) id = `${rawId}-${n}`;
 
-    client = { ws, id, name, look, s, status, claim: null };
+    client = { ws, id, rawId, name, look, s, status, claim: null };
     room.set(id, client);
 
     const others = [...room.values()].filter((c) => c.id !== id).map(asRemotePlayer);
@@ -498,7 +580,7 @@ wss.on("connection", (ws, req) => {
       t: "welcome",
       selfId: id,
       players: others,
-      booths: roomBooths(room, id),
+      booths: floorBooths(floorId, room, rawId),
       activity: activity.get(floorId) ?? [], // oldest first, <= 20
     });
     broadcast(room, { t: "player_join", player: asRemotePlayer(client) }, id);
@@ -521,32 +603,64 @@ wss.on("connection", (ws, req) => {
     if (!suppressed) pushActivity(room, floorId, `${name} walked in`);
     console.log(`[ws] join  floor=${floorId} id=${id} name="${name}" (${room.size} online)`);
 
-    // a stand carried in with the join frame goes through the same arbitration
-    if (msg.claim !== undefined) handleBoothSet({ claim: msg.claim });
+    // A stand carried in with the join frame goes through the same arbitration.
+    // A join WITHOUT a claim from a profile that has a stored stand means the
+    // owner packed up while away (or wiped their browser) — the client's saved
+    // state is the source of truth, so the stand comes down.
+    if (msg.claim !== undefined) {
+      handleBoothSet({ claim: msg.claim }, { silentActivity: standFor(rawId) !== null });
+    } else if (standFor(rawId)) {
+      removeStand(rawId);
+    }
   }
 
-  function handleBoothSet(msg) {
+  /** The joining profile's stored stand on this floor, if any. */
+  function standFor(profileId) {
+    return stands.get(floorId)?.get(profileId) ?? null;
+  }
+
+  function removeStand(profileId) {
+    const byOwner = stands.get(floorId);
+    if (!byOwner?.delete(profileId)) return;
+    if (byOwner.size === 0) stands.delete(floorId);
+    broadcast(room, { t: "booth_clear", ownerId: profileId }, client.id);
+    scheduleSave();
+  }
+
+  function handleBoothSet(msg, opts = {}) {
     const claim = sanitizeClaim(msg.claim);
     if (!claim) return;
-    const holder = spotTakenBy(room, claim.spotIndex, client.id);
+    const holder = spotTakenBy(floorId, claim.spotIndex, client.rawId);
     if (holder) {
-      // first claim wins; the loser's UI reverts and explains
+      // First claim wins — including stands whose owner is merely away.
       send(ws, { t: "booth_denied", spotIndex: claim.spotIndex });
       return;
     }
     // Every client saves its own startup under the same local id ("mine"), so
     // relayed claims must be re-keyed by owner or they collide in receivers'
-    // startup lookups and connection records.
-    claim.startup.id = `claim:${client.id}`;
+    // startup lookups and connection records. Keyed by the stable profile id.
+    claim.startup.id = `claim:${client.rawId}`;
     client.claim = claim;
-    broadcast(room, { t: "booth_set", ownerId: client.id, claim }, client.id);
-    pushActivity(room, floorId, `${client.name} set up a stand`);
+    let byOwner = stands.get(floorId);
+    if (!byOwner) {
+      byOwner = new Map();
+      stands.set(floorId, byOwner);
+    }
+    if (!byOwner.has(client.rawId) && byOwner.size >= MAX_STANDS_PER_FLOOR) return;
+    byOwner.set(client.rawId, { claim, ownerName: client.name, lastSeen: Date.now() });
+    scheduleSave();
+    broadcast(
+      room,
+      { t: "booth_set", ownerId: client.rawId, ownerName: client.name, online: true, claim },
+      client.id,
+    );
+    // Re-raising your existing stand on rejoin is routine, not news.
+    if (!opts.silentActivity) pushActivity(room, floorId, `${client.name} set up a stand`);
   }
 
   function handleBoothClear() {
-    if (!client.claim) return;
     client.claim = null;
-    broadcast(room, { t: "booth_clear", ownerId: client.id }, client.id);
+    removeStand(client.rawId);
     // deliberately no activity item — pack-ups are noise
   }
 
@@ -691,16 +805,54 @@ wss.on("connection", (ws, req) => {
       case "sign":
         handleSign(msg);
         break;
+      case "report":
+        handleReport(msg);
+        break;
       default:
         break; // unknown frame types are ignored
     }
   });
+
+  // report rate limiting: one per 10s per client
+  let lastReportAt = 0;
+  function handleReport(msg) {
+    const now = Date.now();
+    if (now - lastReportAt < 10_000) return;
+    lastReportAt = now;
+    const targetId = sanitizeStr(msg.targetId, MAX_ID_LEN);
+    if (!targetId) return;
+    reports.push({
+      ts: now,
+      floor: floorId,
+      fromId: client.rawId,
+      fromName: client.name,
+      targetId,
+      reason: sanitizeStr(msg.reason, 200) || "unspecified",
+    });
+    if (reports.length > MAX_REPORTS) reports = reports.slice(-MAX_REPORTS);
+    scheduleSave();
+    console.log(`[report] floor=${floorId} from="${client.name}" target=${targetId}`);
+  }
 
   ws.on("close", () => {
     if (!client || !room) return;
     room.delete(client.id);
     broadcast(room, { t: "player_leave", id: client.id });
     broadcast(room, { t: "status", online: true, count: room.size });
+    // Their stand stays up. If this was the owner's last connection on the
+    // floor, tell everyone it just went "away" (and stamp lastSeen for expiry).
+    const st = stands.get(floorId)?.get(client.rawId);
+    if (st && !ownerOnline(room, client.rawId)) {
+      st.lastSeen = Date.now();
+      scheduleSave();
+      broadcast(room, {
+        t: "booth_set",
+        ownerId: client.rawId,
+        ownerName: st.ownerName,
+        online: false,
+        claim: st.claim,
+      });
+    }
     console.log(`[ws] leave floor=${floorId} id=${client.id} (${room.size} online)`);
     if (room.size === 0) rooms.delete(floorId);
     client = null;

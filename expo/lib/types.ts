@@ -111,8 +111,11 @@ export interface BoothInstance {
   /** null = vacant stand, open to claim. */
   startup: Startup | null;
   isYours: boolean;
-  /** Wire id of the live player whose claimed stand this is (unset for seed booths). */
+  /** Profile id of the player whose claimed stand this is (unset for seed booths). */
   ownerId?: string;
+  ownerName?: string;
+  /** For owned stands: false = the owner has left the floor (stand is "away"). */
+  ownerOnline?: boolean;
 }
 
 /** A player's claim on a floor spot, carried over the wire. */
@@ -197,7 +200,7 @@ export type NetEvent =
   | { t: "player_join"; player: RemotePlayer }
   | { t: "player_move"; id: string; s: MoveState }
   | { t: "player_leave"; id: string }
-  | { t: "booth_set"; ownerId: string; claim: BoothClaim }
+  | { t: "booth_set"; ownerId: string; ownerName: string; online: boolean; claim: BoothClaim }
   | { t: "booth_clear"; ownerId: string }
   /** Sent only to a claimant whose spot was already taken. */
   | { t: "booth_denied"; spotIndex: number }
@@ -211,7 +214,11 @@ export type NetEvent =
   | { t: "status"; online: boolean; count: number };
 
 export interface RemoteBooth {
+  /** The owner's stable profile id (not the per-connection wire id). */
   ownerId: string;
+  ownerName: string;
+  /** False = the stand is up but its owner has left the floor ("away"). */
+  online: boolean;
   claim: BoothClaim;
 }
 
@@ -241,6 +248,8 @@ export interface NetClient {
    * display name — the server embeds it in the activity ticker line.
    */
   sendSign(key: string, text: string, boothName?: string): void;
+  /** Report a player (stored server-side for the operator; rate-limited). */
+  sendReport(targetId: string, reason: string): void;
   /** Subscribe to events; returns an unsubscribe function. */
   on(cb: (ev: NetEvent) => void): () => void;
 }
@@ -317,6 +326,8 @@ export interface GameHandle {
   showBubble(entityId: string, text: string): void;
   /** Toggle the minimap overlay (also bound to the M key in-game). */
   setMinimap(v: boolean): void;
+  /** Hide chat bubbles from these wire ids (session-scoped mute list). */
+  setMuted(ids: string[]): void;
   /**
    * Auto-walk the player up to a booth spot (index into floor.boothSpots),
    * e.g. deep-linked from the directory's "Walk there". Unknown indexes no-op.

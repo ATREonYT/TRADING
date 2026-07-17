@@ -11,6 +11,8 @@ interface BoothCardProps {
   isYours: boolean;
   /** Claimed by a live player on this floor (the founder is a real person here now). */
   live?: boolean;
+  /** Claimed stand whose owner has left the floor (stand stays up, marked away). */
+  ownerAway?: boolean;
   connected: boolean;
   onConnect: () => void;
   onChat: () => void;
@@ -30,6 +32,7 @@ export default function BoothCard({
   startup: s,
   isYours,
   live = false,
+  ownerAway = false,
   connected,
   onConnect,
   onChat,
@@ -146,6 +149,25 @@ export default function BoothCard({
             <p className="text-sm text-muted">
               {firstName} is a real person, somewhere on this floor right now.
               Say hi in floor chat.
+            </p>
+            <button
+              type="button"
+              onClick={onConnect}
+              disabled={connected}
+              className={`rounded-md border px-3 py-2 text-sm ${
+                connected
+                  ? "cursor-default border-verify/40 text-verify"
+                  : "border-accent text-accent hover:bg-accent-soft"
+              }`}
+            >
+              {connected ? "Connected" : "Connect"}
+            </button>
+          </>
+        ) : ownerAway ? (
+          <>
+            <p className="text-sm text-muted">
+              {firstName} set this stand up but is away right now. Leave a note
+              in the guestbook — founders read them when they come back.
             </p>
             <button
               type="button"

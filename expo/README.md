@@ -80,9 +80,21 @@ preview), then walk up to any open stand and press **E** → **Claim this
 stand**. Your booth goes up on the spot, with a gold owner stripe, and every
 player on the floor sees it live over the WebSocket (first claim wins; the
 server arbitrates ties). One stand per floor; claiming another spot moves your
-stand; "Pack up" from your own stand card takes it down. Claims persist locally
-per floor, and your stand re-raises itself whenever you're on that floor —
-while you're away, it packs up (a stand with nobody at it is just furniture).
+stand; "Pack up" from your own stand card takes it down.
+
+**Stands persist while you're away.** When you leave the floor your stand stays
+up, server-side, marked with a gray "away" lamp on the banner (green while
+you're on the floor) — visitors can still read your pitch, connect, and leave
+guestbook notes, which is the whole point of an expo stand. It comes back
+online the moment you return, and expires after 7 days without a visit.
+Packing up (or taking down your startup in Profile) removes it everywhere.
+
+## Moderation
+
+In any player DM thread: **Mute** hides that person's floor chat, DMs, bubbles
+and emotes for you (session-scoped); **Report** files a rate-limited report the
+operator can review in `server/floor-data.json` under `reports`. Neither is
+visible to the other person.
 
 ## Floor server HTTP
 

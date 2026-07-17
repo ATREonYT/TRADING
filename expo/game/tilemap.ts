@@ -32,6 +32,9 @@ export interface ClaimEntry {
   claim: BoothClaim;
   isYours: boolean;
   ownerId?: string;
+  ownerName?: string;
+  /** False = the stand's owner has left the floor (rendered as "away"). */
+  online?: boolean;
 }
 
 export interface BuiltFloor {
@@ -150,7 +153,14 @@ export function buildFloor(
     // vacant after seeding: a live claim may occupy it (first claim wins)
     const c = claimBySpot.get(i);
     if (c) {
-      booths.push({ ...base, startup: c.claim.startup, isYours: c.isYours, ownerId: c.ownerId });
+      booths.push({
+        ...base,
+        startup: c.claim.startup,
+        isYours: c.isYours,
+        ownerId: c.ownerId,
+        ownerName: c.ownerName,
+        ownerOnline: c.isYours ? true : c.online,
+      });
     } else {
       booths.push({ ...base, startup: null, isYours: false });
     }
@@ -335,6 +345,14 @@ function bannerDrawable(b: BoothInstance & { startup: Startup }): Drawable {
       if (yours) {
         ctx.fillStyle = GOLD;
         ctx.fillRect(bx + 3, by + T - 7, 4 * T - 6, 3);
+      }
+      // player-owned stands wear a presence lamp: green = owner on the floor,
+      // gray = stand is up but the owner is away
+      if (b.ownerId) {
+        ctx.fillStyle = dark;
+        ctx.fillRect(bx + 4 * T - 15, by - 6, 8, 8);
+        ctx.fillStyle = b.ownerOnline ? "#2B8A3E" : "#9A937F";
+        ctx.fillRect(bx + 4 * T - 13, by - 4, 4, 4);
       }
     },
   };

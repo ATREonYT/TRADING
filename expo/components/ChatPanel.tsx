@@ -23,6 +23,8 @@ export interface ChatThread {
   connected: boolean;
   /** Player threads only: the peer has left the floor. */
   left?: boolean;
+  /** Player threads only: their messages and bubbles are hidden for you. */
+  muted?: boolean;
 }
 
 interface ChatPanelProps {
@@ -40,6 +42,10 @@ interface ChatPanelProps {
   onConnect: (key: string) => void;
   /** Hide a thread's tab (never deletes its history). */
   onClose: (key: string) => void;
+  /** Player threads only: toggle the session mute for this peer. */
+  onToggleMute?: (key: string) => void;
+  /** Player threads only: report this peer to the operator. */
+  onReport?: (key: string) => void;
 }
 
 function MessageRow({ msg, mine }: { msg: ChatMsg; mine: boolean }) {
@@ -67,6 +73,8 @@ export default function ChatPanel({
   onFocusChange,
   onConnect,
   onClose,
+  onToggleMute,
+  onReport,
 }: ChatPanelProps) {
   const [text, setText] = useState("");
   // Small screens start collapsed so the floor stays visible.
@@ -194,18 +202,42 @@ export default function ChatPanel({
       {active && (
         <div className="flex items-center justify-between gap-2 border-b border-line bg-paper/60 px-3 py-1.5">
           <span className="truncate text-xs text-muted">{active.title}</span>
-          <button
-            type="button"
-            onClick={() => onConnect(active.key)}
-            disabled={active.connected}
-            className={`micro rounded-sm border px-1.5 py-0.5 ${
-              active.connected
-                ? "cursor-default border-verify/40 text-verify"
-                : "border-accent text-accent hover:bg-accent-soft"
-            }`}
-          >
-            {active.connected ? "Connected" : "Connect"}
-          </button>
+          <span className="flex shrink-0 items-center gap-1.5">
+            {active.kind === "player" && onToggleMute && (
+              <button
+                type="button"
+                onClick={() => onToggleMute(active.key)}
+                className={`micro rounded-sm border px-1.5 py-0.5 ${
+                  active.muted
+                    ? "border-ink text-ink"
+                    : "border-line text-muted hover:border-ink hover:text-ink"
+                }`}
+              >
+                {active.muted ? "Unmute" : "Mute"}
+              </button>
+            )}
+            {active.kind === "player" && onReport && (
+              <button
+                type="button"
+                onClick={() => onReport(active.key)}
+                className="micro rounded-sm border border-line px-1.5 py-0.5 text-muted hover:border-ink hover:text-ink"
+              >
+                Report
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => onConnect(active.key)}
+              disabled={active.connected}
+              className={`micro rounded-sm border px-1.5 py-0.5 ${
+                active.connected
+                  ? "cursor-default border-verify/40 text-verify"
+                  : "border-accent text-accent hover:bg-accent-soft"
+              }`}
+            >
+              {active.connected ? "Connected" : "Connect"}
+            </button>
+          </span>
         </div>
       )}
 

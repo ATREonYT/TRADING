@@ -274,6 +274,11 @@ export function createNetClient(wsUrl?: string): NetClient {
       ws.send(JSON.stringify({ t: "booth_clear" }));
     },
 
+    sendReport(targetId: string, reason: string): void {
+      if (phase !== "open" || !ws || ws.readyState !== ws.OPEN) return;
+      ws.send(JSON.stringify({ t: "report", targetId, reason }));
+    },
+
     sendChat(text: string, scope: "floor" | "dm", peerId?: string): void {
       // The server echoes floor chat (and dms) back to the sender for
       // consistent ordering, so this client never fakes a local echo.
