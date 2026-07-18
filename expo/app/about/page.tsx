@@ -53,8 +53,15 @@ export default function AboutPage() {
         <p>
           <strong>In your browser (localStorage):</strong> your display name,
           avatar, booth, quests, badges, notes on connections, and — if you
-          create an account — a session token. Clearing site data removes all
-          of it.
+          create an account — a session token. Clearing site data removes it
+          from that device.
+        </p>
+        <p>
+          <strong>Progress sync:</strong> the same profile data (booth,
+          badges, quests, streaks, membership tier) is also saved to the
+          floor server under your identity, so signing in on another device
+          brings it with you. It expires after 180 days of inactivity, and a
+          deletion request removes it.
         </p>
         <p>
           <strong>On the floor server:</strong> what other people need to see

@@ -23,6 +23,7 @@ import type {
 } from "@/lib/types";
 import { ONBOARDING_STEPS } from "@/lib/types";
 import { FLOORS } from "@/lib/data/floors";
+import { getLastSyncTs, pullState, pushState, setLastSyncTs, syncableState } from "@/lib/sync";
 
 const STORAGE_KEY = "founderfloor:v1";
 
@@ -121,6 +122,68 @@ function setState(next: AppState): void {
   state = next;
   persist();
   emit();
+  scheduleSyncPush();
+}
+
+// ---------- cross-device sync ----------
+
+let syncTimer: ReturnType<typeof setTimeout> | null = null;
+let lastPushedJson = "";
+
+/** Debounced push of syncable state to the floor server (no-op offline). */
+function scheduleSyncPush(): void {
+  if (typeof window === "undefined" || !hydrated) return;
+  if (syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => {
+    syncTimer = null;
+    const me = state.profile.id;
+    if (!me || state.profile.name === "") return; // nothing worth syncing yet
+    const blob = syncableState(state);
+    const json = JSON.stringify(blob);
+    if (json === lastPushedJson) return;
+    void pushState(me, blob).then((savedAt) => {
+      if (savedAt !== null) {
+        lastPushedJson = json;
+        setLastSyncTs(savedAt);
+      }
+    });
+  }, 2500);
+}
+
+/**
+ * Apply a pulled blob when it's newer than this device's last sync point.
+ * The blob goes through sanitize() — the same defensive gate as
+ * localStorage — and never touches the local identity or seen-marks.
+ */
+function applyRemoteState(remote: { state: unknown; savedAt: number }): boolean {
+  if (!remote.state || typeof remote.state !== "object") return false;
+  if (remote.savedAt <= getLastSyncTs()) return false;
+  const merged = sanitize(remote.state);
+  merged.profile.id = state.profile.id;
+  if (merged.profile.name === "") merged.profile.name = state.profile.name;
+  merged.lastSeenAt = state.lastSeenAt;
+  merged.prevSeenAt = state.prevSeenAt;
+  state = merged;
+  persist();
+  emit();
+  lastPushedJson = JSON.stringify(syncableState(state));
+  setLastSyncTs(remote.savedAt);
+  return true;
+}
+
+/**
+ * Pull-and-apply for the current identity, then push if the server had
+ * nothing newer. Called on load and after sign-in; safe to call anytime.
+ */
+export function syncNow(): void {
+  if (typeof window === "undefined") return;
+  ensureClientInit();
+  const me = state.profile.id;
+  if (!me || state.profile.name === "") return;
+  void pullState(me).then((remote) => {
+    if (remote && remote.state && applyRemoteState(remote)) return;
+    scheduleSyncPush();
+  });
 }
 
 // ---------- id + parsing helpers ----------
@@ -364,6 +427,10 @@ function ensureClientInit(): void {
   state = next;
   persist();
   emit();
+
+  // Pull any newer cross-device state once per load (async; the UI renders
+  // from localStorage first and updates if the server has something fresher).
+  setTimeout(() => syncNow(), 0);
 
   if (!storageListenerAttached) {
     storageListenerAttached = true;
@@ -625,6 +692,11 @@ const ACTIONS: StoreActions = {
     const nextName = name.trim().slice(0, 24) || state.profile.name;
     if (nextId === state.profile.id && nextName === state.profile.name) return;
     setState({ ...state, profile: { ...state.profile, id: nextId, name: nextName } });
+    // Signing in on a second device pulls the account's progress down;
+    // a fresh account uploads this device's progress instead.
+    setLastSyncTs(0);
+    lastPushedJson = "";
+    syncNow();
   },
 };
 

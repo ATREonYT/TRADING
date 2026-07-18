@@ -429,6 +429,11 @@ export default function LandingPage() {
                   image, shrunk to a 16&times;16 mark on your stand.
                 </li>
                 <li>
+                  <span className="text-ink">Your progress, everywhere</span>{" "}
+                  — booth, quests, badges, and streaks now follow your
+                  account across devices.
+                </li>
+                <li>
                   <span className="text-ink">Smooth on any machine</span> —
                   the floor now tunes its render resolution to your hardware.
                 </li>
@@ -441,11 +446,6 @@ export default function LandingPage() {
                   <span className="text-ink">Real revenue verification</span>{" "}
                   — a read-only Stripe connection, so the gold badges stop
                   being simulated and start being earned.
-                </li>
-                <li>
-                  <span className="text-ink">Your progress, everywhere</span>{" "}
-                  — booth, quests, and badges following your account across
-                  devices.
                 </li>
                 <li>
                   <span className="text-ink">A real events calendar</span> —

@@ -107,6 +107,24 @@ const STAND_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const MAX_STANDS_PER_FLOOR = 64;
 
 /**
+ * profileStates: profileId -> { state, savedAt } — the client's app state
+ * (booth, badges, quests, streaks, membership...) so progress follows an
+ * identity across devices. The server treats the blob as semi-opaque: it
+ * enforces identity, size, and a top-level key allowlist; the CLIENT runs
+ * its own defensive sanitize() when applying (the same one that guards
+ * localStorage), so a hostile blob can't do more here than there.
+ */
+const profileStates = new Map();
+const MAX_PROFILE_STATES = 5000;
+const MAX_STATE_BYTES = 24 * 1024;
+const PROFILE_STATE_TTL_MS = 180 * 24 * 60 * 60 * 1000;
+const STATE_KEYS = new Set([
+  "profile", "sub", "connections", "myStartup", "claims", "onboarding",
+  "tutorialDone", "badges", "quest", "claimedQuests", "lastVisitDay",
+  "visitStreak", "bestStreak",
+]);
+
+/**
  * registry: profileId -> { startup, ts } — startups registered the moment
  * they're created in the profile editor, before (or without) a floor stand.
  * The directory lists them as "no stand yet" and their categories join the
@@ -360,6 +378,16 @@ function loadData() {
     }
   }
 
+  if (parsed.profileStates && typeof parsed.profileStates === "object") {
+    const cutoff = Date.now() - PROFILE_STATE_TTL_MS;
+    for (const [pid, v] of Object.entries(parsed.profileStates)) {
+      if (profileStates.size >= MAX_PROFILE_STATES) break;
+      if (!v || typeof v !== "object" || typeof v.savedAt !== "number" || v.savedAt <= cutoff) continue;
+      const state = sanitizeStateBlob(v.state);
+      if (state) profileStates.set(pid.slice(0, MAX_ID_LEN), { state, savedAt: v.savedAt });
+    }
+  }
+
   if (parsed.guestSecrets && typeof parsed.guestSecrets === "object") {
     const cutoff = Date.now() - GUEST_SECRET_TTL_MS;
     for (const [pid, v] of Object.entries(parsed.guestSecrets)) {
@@ -443,6 +471,7 @@ function saveNow() {
     tokens: Object.fromEntries(tokens),
     guestSecrets: Object.fromEntries(guestSecrets),
     registry: Object.fromEntries(registry),
+    profileStates: Object.fromEntries(profileStates),
   };
   const tmp = `${DATA_FILE}.tmp`;
   try {
@@ -575,6 +604,25 @@ function sanitizeStartup(s) {
 }
 
 /**
+ * Keep only the allowlisted top-level keys of a synced app state and enforce
+ * the size cap. Deep validation happens client-side on apply (sanitize() in
+ * lib/store.ts guards this exactly like it guards localStorage).
+ */
+function sanitizeStateBlob(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const out = {};
+  for (const key of Object.keys(v)) {
+    if (STATE_KEYS.has(key)) out[key] = v[key];
+  }
+  try {
+    if (JSON.stringify(out).length > MAX_STATE_BYTES) return null;
+  } catch {
+    return null;
+  }
+  return out;
+}
+
+/**
  * Rebuild a claim from an untrusted frame. Returns null if the claim is
  * structurally unusable.
  */
@@ -664,6 +712,12 @@ function pruneCredentials() {
   for (const [pid, v] of registry) {
     if (now - v.ts > REGISTRY_TTL_MS) {
       registry.delete(pid);
+      changed = true;
+    }
+  }
+  for (const [pid, v] of profileStates) {
+    if (now - v.savedAt > PROFILE_STATE_TTL_MS) {
+      profileStates.delete(pid);
       changed = true;
     }
   }
@@ -1132,6 +1186,48 @@ const server = createServer((req, res) => {
       });
     }
     sendJson(res, { startups: out });
+    return;
+  }
+
+  // Cross-device progress: an identity's app state (booth, badges, quests,
+  // streaks, membership) saved by one browser and pulled by another.
+  if (req.method === "GET" && url.pathname === "/state") {
+    const me = (url.searchParams.get("me") || "").slice(0, MAX_ID_LEN);
+    const authHeader = typeof req.headers.authorization === "string" ? req.headers.authorization : "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+    const gsHeader = req.headers["x-ff-gs"];
+    const gs = typeof gsHeader === "string" ? gsHeader : "";
+    if (!me || !verifyIdentity(me, token, gs)) {
+      notFound(res);
+      return;
+    }
+    const entry = profileStates.get(me);
+    sendJson(res, entry ? { state: entry.state, savedAt: entry.savedAt } : { state: null, savedAt: 0 });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/state/save") {
+    void (async () => {
+      const body = await readJson(req);
+      const me = body ? sanitizeStr(body.me, MAX_ID_LEN) : "";
+      if (!body || !me || !verifyIdentity(me, body.token, body.gs)) {
+        notFound(res);
+        return;
+      }
+      const state = sanitizeStateBlob(body.state);
+      if (!state) {
+        notFound(res);
+        return;
+      }
+      if (!profileStates.has(me) && profileStates.size >= MAX_PROFILE_STATES) {
+        sendJson(res, { error: "state store full" });
+        return;
+      }
+      const savedAt = Date.now();
+      profileStates.set(me, { state, savedAt });
+      scheduleSave();
+      sendJson(res, { ok: true, savedAt });
+    })();
     return;
   }
 
