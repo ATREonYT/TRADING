@@ -597,6 +597,13 @@ export default function FloorPage({ params }: { params: { id: string } }) {
     if (ready && allowed && floor) actions.recordFloorVisit(floor.id);
   }, [ready, allowed, floor, actions]);
 
+  // Deep links land people straight on floors — count the visit here too so
+  // streaks and the away-mark don't depend on passing through the lobby.
+  useEffect(() => {
+    if (ready && allowed) actions.recordVisit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, allowed]);
+
   // Quest rewards — grant each completed quest's badge/title/emote exactly once.
   const quests = useMemo(() => questStates(state), [state]);
   const emotes = useMemo(() => unlockedEmotes(state), [state]);

@@ -467,6 +467,15 @@ export interface AppState {
   quest: QuestProgress;
   /** Quest ids whose rewards were already granted (so toasts fire once). */
   claimedQuests: string[];
+  /** Local date (YYYY-MM-DD) of the last counted visit day. */
+  lastVisitDay?: string;
+  /** Consecutive visit days, current and best-ever (drives the habit quest). */
+  visitStreak: number;
+  bestStreak: number;
+  /** When THIS session first opened the app (ms). */
+  lastSeenAt: number;
+  /** When the PREVIOUS session ended (ms) — the "since you were away" mark. */
+  prevSeenAt: number;
 }
 
 export const TILE = 32; // px per tile — single source of truth

@@ -8,6 +8,7 @@ import { TIER_ORDER, type AvatarLook } from "@/lib/types";
 import AvatarPicker from "@/components/AvatarPicker";
 import TierTag, { TIER_LABEL } from "@/components/TierTag";
 import EventPill from "@/components/EventPill";
+import LobbyPulse from "@/components/LobbyPulse";
 import { usePresence } from "@/components/usePresence";
 
 function FirstVisitPanel({
@@ -74,6 +75,13 @@ export default function LobbyPage() {
     setReady(true);
   }, []);
 
+  // Count the visit once the store is hydrated and the player exists —
+  // rolls the "since you were away" mark and extends the day streak.
+  useEffect(() => {
+    if (ready && state.profile.name !== "") actions.recordVisit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, state.profile.name !== ""]);
+
   if (!ready) {
     return (
       <main className="mx-auto w-full max-w-5xl px-4 py-14">
@@ -101,6 +109,11 @@ export default function LobbyPage() {
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="font-display text-3xl">Pick a floor</h1>
           <EventPill />
+          {state.visitStreak >= 2 && (
+            <span className="micro rounded-sm border border-verify/40 px-1.5 py-0.5 text-verify">
+              Day {state.visitStreak} streak
+            </span>
+          )}
         </div>
         <p className="text-sm text-muted">
           Walking as <span className="text-ink">{state.profile.name}</span> ·{" "}
@@ -113,6 +126,14 @@ export default function LobbyPage() {
           </Link>
         </p>
       </div>
+
+      <LobbyPulse
+        me={state.profile.id}
+        sub={state.sub}
+        prevSeenAt={state.prevSeenAt}
+        visitStreak={state.visitStreak}
+        claims={state.claims}
+      />
 
       <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {FLOORS.map((floor) => {

@@ -374,6 +374,68 @@ export default function LandingPage() {
         </Reveal>
       </section>
 
+      {/* what's next — the build is alive; give people a reason to check back */}
+      <section aria-labelledby="next-heading" className="border-t border-line">
+        <Reveal className="mx-auto w-full max-w-5xl px-4 py-14 sm:py-16">
+          <h2 id="next-heading" className="font-display text-3xl">
+            The floor keeps changing
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
+            This place ships weekly. Walk in after a few days away and the
+            lobby will tell you what you missed.
+          </p>
+          <div className="mt-8 grid gap-6 md:grid-cols-2">
+            <div className="panel p-6">
+              <p className="micro text-verify">Landed recently</p>
+              <ul className="mt-3 flex flex-col gap-2.5 text-sm leading-relaxed text-muted">
+                <li>
+                  <span className="text-ink">A directory that grows itself</span>{" "}
+                  — every startup someone creates shows up, with its category
+                  as a new filter, the moment they save it.
+                </li>
+                <li>
+                  <span className="text-ink">Chats that follow you</span> —
+                  message a connection from anywhere; they get a pixel-mail
+                  ping whether they&rsquo;re on a floor or in a menu.
+                </li>
+                <li>
+                  <span className="text-ink">Your own banner logo</span> — any
+                  image, shrunk to a 16&times;16 mark on your stand.
+                </li>
+                <li>
+                  <span className="text-ink">Smooth on any machine</span> —
+                  the floor now tunes its render resolution to your hardware.
+                </li>
+              </ul>
+            </div>
+            <div className="panel p-6">
+              <p className="micro text-accent">Being built</p>
+              <ul className="mt-3 flex flex-col gap-2.5 text-sm leading-relaxed text-muted">
+                <li>
+                  <span className="text-ink">Real revenue verification</span>{" "}
+                  — a read-only Stripe connection, so the gold badges stop
+                  being simulated and start being earned.
+                </li>
+                <li>
+                  <span className="text-ink">Your progress, everywhere</span>{" "}
+                  — booth, quests, and badges following your account across
+                  devices.
+                </li>
+                <li>
+                  <span className="text-ink">A real events calendar</span> —
+                  Demo Night gets siblings: pitch hours, category meetups,
+                  co-founder speed-walking.
+                </li>
+                <li>
+                  <span className="text-ink">Bigger halls</span> — new floors
+                  open as the existing ones fill with real stands.
+                </li>
+              </ul>
+            </div>
+          </div>
+        </Reveal>
+      </section>
+
       {/* final CTA */}
       <section aria-labelledby="cta-heading" className="bg-ink">
         <div className="mx-auto w-full max-w-5xl px-4 py-16 text-center sm:py-20">

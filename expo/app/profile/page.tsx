@@ -89,6 +89,11 @@ const BADGE_META: Record<string, { name: string; blurb: string; glyph: GlyphId }
     blurb: "Ten reactions deep.",
     glyph: "coin",
   },
+  habit: {
+    name: "Regular",
+    blurb: "Three days running. The floor notices.",
+    glyph: "leaf",
+  },
 };
 
 interface BoothForm {

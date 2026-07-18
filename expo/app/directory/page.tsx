@@ -6,7 +6,7 @@
  * link straight to the booth's floor. Presence dots come from /presence.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { STARTUPS } from "@/lib/data/startups";
 import { FLOORS } from "@/lib/data/floors";
@@ -61,6 +61,13 @@ export default function DirectoryPage() {
   const [q, setQ] = useState("");
   const [category, setCategory] = useState<string | null>(null);
   const [seeking, setSeeking] = useState(false);
+  // ?seeking=1 deep link (the lobby's co-founder board) pre-arms the filter.
+  // Applied post-mount: reading location during render breaks hydration.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("seeking") === "1") {
+      setSeeking(true);
+    }
+  }, []);
   const [minRank, setMinRank] = useState<RankId | null>(null);
   const presence = usePresence();
   const community = useCommunityStartups();

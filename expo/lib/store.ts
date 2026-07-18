@@ -56,6 +56,14 @@ export interface StoreActions {
   recordEmote(): void;
   /** Mark a quest's reward as granted so it never re-fires. */
   markQuestClaimed(id: string): void;
+  /**
+   * Count a visit: called on lobby/floor mount. Within 30 minutes of the
+   * last call it only refreshes lastSeenAt (same session); after a longer
+   * gap it rolls prevSeenAt forward (the "since you were away" mark) and
+   * updates the day streak — consecutive calendar days extend it, a gap
+   * resets it to 1.
+   */
+  recordVisit(): void;
   /** Pick an earned title (<= 24 chars; empty clears). Shown on your hover card. */
   setTitle(t: string): void;
   /**
@@ -79,6 +87,10 @@ function defaultState(): AppState {
     badges: [],
     quest: { talkedTo: [], signed: [], floors: [], emotes: 0 },
     claimedQuests: [],
+    visitStreak: 0,
+    bestStreak: 0,
+    lastSeenAt: 0,
+    prevSeenAt: 0,
   };
 }
 
@@ -315,6 +327,17 @@ function sanitize(raw: unknown): AppState {
   }
 
   base.claimedQuests = strList(r.claimedQuests, 32, 50);
+
+  if (typeof r.lastVisitDay === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.lastVisitDay)) {
+    base.lastVisitDay = r.lastVisitDay;
+  }
+  base.visitStreak = Math.min(10_000, Math.max(0, Math.trunc(numOr(r.visitStreak, 0))));
+  base.bestStreak = Math.max(
+    base.visitStreak,
+    Math.min(10_000, Math.max(0, Math.trunc(numOr(r.bestStreak, 0)))),
+  );
+  base.lastSeenAt = Math.max(0, numOr(r.lastSeenAt, 0));
+  base.prevSeenAt = Math.max(0, numOr(r.prevSeenAt, 0));
 
   return base;
 }
@@ -555,6 +578,35 @@ const ACTIONS: StoreActions = {
     const q = id.trim().slice(0, 32);
     if (!q || state.claimedQuests.includes(q) || state.claimedQuests.length >= 50) return;
     setState({ ...state, claimedQuests: [...state.claimedQuests, q] });
+  },
+
+  recordVisit(): void {
+    ensureClientInit();
+    const now = Date.now();
+    const sameSession = state.lastSeenAt > 0 && now - state.lastSeenAt < 30 * 60_000;
+    // local calendar day, so "come back tomorrow" means the user's tomorrow
+    const dayOf = (ms: number): string => {
+      const d = new Date(ms);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    };
+    const today = dayOf(now);
+    let { visitStreak, bestStreak, lastVisitDay } = state;
+    if (lastVisitDay !== today) {
+      const yesterday = dayOf(now - 24 * 60 * 60 * 1000);
+      visitStreak = lastVisitDay === yesterday ? visitStreak + 1 : 1;
+      bestStreak = Math.max(bestStreak, visitStreak);
+      lastVisitDay = today;
+    }
+    setState({
+      ...state,
+      visitStreak,
+      bestStreak,
+      lastVisitDay,
+      // a real gap rolls the away-mark forward; same-session visits keep it,
+      // so the digest still describes "since you last sat down"
+      prevSeenAt: sameSession ? state.prevSeenAt : state.lastSeenAt,
+      lastSeenAt: now,
+    });
   },
 
   setTitle(t: string): void {

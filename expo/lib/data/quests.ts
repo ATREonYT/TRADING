@@ -97,6 +97,15 @@ export const QUESTS: QuestDef[] = [
     reward: { badge: "crowd-pleaser", title: "Socialite" },
     rewardLabel: "title: Socialite",
   },
+  {
+    id: "habit",
+    title: "Make it a habit",
+    blurb: "Show up three days in a row.",
+    goal: 3,
+    unit: "days",
+    reward: { badge: "habit", title: "Regular" },
+    rewardLabel: "title: Regular",
+  },
 ];
 
 export interface QuestState {
@@ -124,6 +133,8 @@ export function questStates(state: AppState): QuestState[] {
         return state.quest.floors.length;
       case "crowd-pleaser":
         return state.quest.emotes;
+      case "habit":
+        return state.bestStreak;
       default:
         return 0;
     }
