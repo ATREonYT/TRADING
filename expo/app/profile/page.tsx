@@ -18,7 +18,16 @@ import AvatarPicker from "@/components/AvatarPicker";
 import BoothPreview from "@/components/BoothPreview";
 import RankBadge from "@/components/RankBadge";
 import PixelGlyph, { GLYPH_IDS } from "@/components/PixelGlyph";
-import { TIER_LABEL, TIER_PRICE } from "@/components/TierTag";
+import { TIER_LABEL, TIER_PRICE, TIER_PRICE_ANNUAL } from "@/components/TierTag";
+import {
+  FOUNDING_OFFER,
+  TIER_PRICING,
+  annualFreeMonths,
+  billingLive,
+  checkoutLink,
+  foundingCheckoutLink,
+  type BillingCycle,
+} from "@/lib/pricing";
 import Toast, { type ToastData } from "@/components/Toast";
 
 const SWATCHES: string[] = [
@@ -93,6 +102,11 @@ const BADGE_META: Record<string, { name: string; blurb: string; glyph: GlyphId }
     name: "Regular",
     blurb: "Three days running. The floor notices.",
     glyph: "leaf",
+  },
+  founding: {
+    name: "Founding Member",
+    blurb: "Here before it was anything. The number stays.",
+    glyph: "chip",
   },
 };
 
@@ -216,6 +230,7 @@ export default function ProfilePage() {
   const [form, setForm] = useState<BoothForm>(EMPTY_FORM);
   const [monthly, setMonthly] = useState("");
   const [progress, setProgress] = useState(0);
+  const [cycle, setCycle] = useState<BillingCycle>("annual");
   const [toast, setToast] = useState<ToastData | null>(null);
 
   useEffect(() => {
@@ -843,17 +858,86 @@ export default function ProfilePage() {
 
       {/* ---- Membership ---- */}
       <SectionCard title="Membership" id="membership">
-        <div className="mb-4 flex items-center gap-2">
-          <span className="micro rounded-sm border border-line px-1.5 py-0.5 text-muted">
-            demo — no payment wired
-          </span>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          {!billingLive() && (
+            <span className="micro rounded-sm border border-line px-1.5 py-0.5 text-muted">
+              billing not live yet — buttons simulate the switch
+            </span>
+          )}
+          <div
+            role="group"
+            aria-label="Billing cycle"
+            className="flex rounded-md border border-line p-0.5"
+          >
+            {(["monthly", "annual"] as BillingCycle[]).map((c) => (
+              <button
+                key={c}
+                type="button"
+                aria-pressed={cycle === c}
+                onClick={() => setCycle(c)}
+                className={`rounded-sm px-3 py-1 text-xs ${
+                  cycle === c ? "bg-ink text-paper" : "text-muted hover:text-ink"
+                }`}
+              >
+                {c === "monthly" ? "Monthly" : "Annual"}
+              </button>
+            ))}
+          </div>
         </div>
+
+        {/* founding member — the beta offer, capped and numbered */}
+        <article className="mb-4 rounded-md border border-gold/60 bg-paper/60 p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="font-display text-base">Founding Member</h3>
+            <span className="text-sm text-ink">
+              ${FOUNDING_OFFER.price}{" "}
+              <span className="text-xs text-muted">once · first {FOUNDING_OFFER.cap} only</span>
+            </span>
+          </div>
+          <p className="mt-1.5 text-xs leading-relaxed text-muted">
+            A year of Founder+, your renewal price locked for life, and a
+            numbered founding badge on your card that never goes away. When
+            they&rsquo;re gone, they&rsquo;re gone.
+          </p>
+          {state.badges.includes(FOUNDING_OFFER.badgeId) ? (
+            <span className="micro mt-3 inline-block rounded-md border border-gold/60 px-3 py-1.5 text-gold-deep">
+              You&rsquo;re a founding member
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                const link = foundingCheckoutLink();
+                if (link) {
+                  window.open(link, "_blank", "noopener");
+                  return;
+                }
+                actions.setSub("founder");
+                actions.grantBadge(FOUNDING_OFFER.badgeId);
+                setToast({
+                  id: Date.now(),
+                  text: "Founding member (simulated). Welcome to the wall.",
+                });
+              }}
+              className="mt-3 rounded-md bg-ink px-3 py-1.5 text-sm text-paper hover:bg-ink/85"
+            >
+              {foundingCheckoutLink() ? "Become a founding member" : "Simulate founding membership"}
+            </button>
+          )}
+        </article>
+
         <div className="grid gap-4 sm:grid-cols-3">
           {(["free", "pro", "founder"] as SubTier[]).map((tier) => {
             const current = state.sub === tier;
             const unlocked = FLOORS.filter(
               (f) => TIER_ORDER[f.tier] <= TIER_ORDER[tier],
             );
+            const price =
+              tier === "free"
+                ? "$0"
+                : cycle === "monthly"
+                  ? TIER_PRICE[tier]
+                  : TIER_PRICE_ANNUAL[tier];
             return (
               <article
                 key={tier}
@@ -863,8 +947,13 @@ export default function ProfilePage() {
               >
                 <div className="flex items-baseline justify-between gap-2">
                   <h3 className="font-display text-base">{TIER_LABEL[tier]}</h3>
-                  <span className="text-xs text-muted">{TIER_PRICE[tier]}</span>
+                  <span className="text-xs text-muted">{price}</span>
                 </div>
+                {tier !== "free" && cycle === "annual" && (
+                  <p className="micro mt-0.5 text-verify">
+                    {annualFreeMonths(tier)} months free vs monthly
+                  </p>
+                )}
                 <p className="mt-1.5 text-xs leading-relaxed text-muted">
                   {TIER_BLURB[tier]}
                 </p>
@@ -886,6 +975,13 @@ export default function ProfilePage() {
                   <button
                     type="button"
                     onClick={() => {
+                      if (tier !== "free") {
+                        const link = checkoutLink(tier, cycle);
+                        if (link) {
+                          window.open(link, "_blank", "noopener");
+                          return;
+                        }
+                      }
                       actions.setSub(tier);
                       setToast({
                         id: Date.now(),

@@ -2,7 +2,8 @@ import Link from "next/link";
 import { FLOORS } from "@/lib/data/floors";
 import { RANKS } from "@/lib/ranks";
 import { TIER_ORDER, type GlyphId, type SubTier } from "@/lib/types";
-import TierTag, { TIER_LABEL, TIER_PRICE } from "@/components/TierTag";
+import TierTag, { TIER_LABEL, TIER_PRICE, TIER_PRICE_ANNUAL } from "@/components/TierTag";
+import { FOUNDING_OFFER, annualFreeMonths } from "@/lib/pricing";
 import PixelGlyph from "@/components/PixelGlyph";
 import HeroScene from "@/components/HeroScene";
 import Reveal from "@/components/Reveal";
@@ -324,10 +325,30 @@ export default function LandingPage() {
               Membership
             </h2>
             <span className="micro rounded-sm border border-line px-1.5 py-0.5 text-muted">
-              demo &mdash; payments not wired up
+              beta &mdash; billing goes live at launch
             </span>
           </div>
-          <div className="mt-8 grid gap-4 sm:grid-cols-3">
+
+          {/* founding member strip — the launch offer, capped on purpose */}
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-md border border-gold/60 bg-panel px-4 py-3">
+            <p className="text-sm">
+              <span className="font-display">Founding Member</span>
+              <span className="text-muted">
+                {" "}
+                — ${FOUNDING_OFFER.price} once: a year of Founder+, your price
+                locked for life, a numbered badge. First {FOUNDING_OFFER.cap}{" "}
+                people only.
+              </span>
+            </p>
+            <Link
+              href="/profile#membership"
+              className="rounded-md border border-ink px-3 py-1.5 text-sm hover:bg-paper"
+            >
+              Claim a number
+            </Link>
+          </div>
+
+          <div className="mt-6 grid gap-4 sm:grid-cols-3">
             {PRICING.map(({ tier, blurb }) => {
               const unlocked = FLOORS.filter(
                 (f) => TIER_ORDER[f.tier] <= TIER_ORDER[tier],
@@ -352,6 +373,11 @@ export default function LandingPage() {
                       <span className="ml-1 font-body text-sm text-muted">/ {per}</span>
                     ) : null}
                   </p>
+                  {tier !== "free" && (
+                    <p className="micro mt-1 text-muted">
+                      or {TIER_PRICE_ANNUAL[tier]} — {annualFreeMonths(tier)} months free
+                    </p>
+                  )}
                   <p className="mt-3 text-sm leading-relaxed text-muted">{blurb}</p>
                   <ul className="mt-4 flex-1 space-y-1.5">
                     {unlocked.map((f) => (

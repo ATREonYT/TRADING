@@ -1,4 +1,5 @@
 import type { SubTier } from "@/lib/types";
+import { TIER_PRICING } from "@/lib/pricing";
 
 export const TIER_LABEL: Record<SubTier, string> = {
   free: "Free",
@@ -8,8 +9,14 @@ export const TIER_LABEL: Record<SubTier, string> = {
 
 export const TIER_PRICE: Record<SubTier, string> = {
   free: "$0",
-  pro: "$9/mo",
-  founder: "$19/mo",
+  pro: `$${TIER_PRICING.pro.monthly}/mo`,
+  founder: `$${TIER_PRICING.founder.monthly}/mo`,
+};
+
+export const TIER_PRICE_ANNUAL: Record<SubTier, string> = {
+  free: "$0",
+  pro: `$${TIER_PRICING.pro.annual}/yr`,
+  founder: `$${TIER_PRICING.founder.annual}/yr`,
 };
 
 const STYLES: Record<SubTier, string> = {
