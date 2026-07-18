@@ -4,4 +4,4 @@ out/
 .env
 *.tsbuildinfo
 next-env.d.ts
-server/floor-data.json
+server/floor-data*.json

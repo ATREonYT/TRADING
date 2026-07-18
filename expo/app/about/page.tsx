@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import FeedbackBox from "@/components/FeedbackBox";
 
 export const metadata: Metadata = {
   title: "About — FounderFloor",
@@ -90,6 +91,15 @@ export default function AboutPage() {
           yours.
         </p>
       </Section>
+
+      <section aria-label="Feedback" id="feedback" className="panel scroll-mt-6 p-6">
+        <h2 className="font-display text-xl">Beta feedback</h2>
+        <p className="mb-4 mt-3 text-sm leading-relaxed text-muted">
+          This is a beta — the fastest way to shape what gets built next is
+          to say something.
+        </p>
+        <FeedbackBox />
+      </section>
 
       <Section title="Contact">
         <p>

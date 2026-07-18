@@ -74,6 +74,10 @@ export default function RootLayout({
               Built by one person and a robot.{" "}
               <Link href="/about" className="underline hover:text-ink">
                 About &amp; privacy
+              </Link>{" "}
+              ·{" "}
+              <Link href="/about#feedback" className="underline hover:text-ink">
+                Send feedback
               </Link>
             </p>
             <p>Revenue ranks are verified &mdash; simulated in this build. Egos are not.</p>

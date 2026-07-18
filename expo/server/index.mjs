@@ -47,7 +47,7 @@
  */
 
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
-import { closeSync, fsyncSync, openSync, readFileSync, renameSync, writeSync } from "node:fs";
+import { closeSync, copyFileSync, fsyncSync, openSync, readFileSync, renameSync, writeSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -137,6 +137,10 @@ const REGISTRY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 /** reports: flat list for the operator to review by hand, cap 500. */
 let reports = [];
 const MAX_REPORTS = 500;
+
+/** feedback: beta notes from users ("this broke", "build this"), cap 500. */
+let feedback = [];
+const MAX_FEEDBACK = 500;
 
 /**
  * accounts: nameLower -> { id: "acct_<uuid>", name, salt, hash } (scrypt).
@@ -426,6 +430,12 @@ function loadData() {
       .slice(-MAX_REPORTS);
   }
 
+  if (Array.isArray(parsed.feedback)) {
+    feedback = parsed.feedback
+      .filter((f) => f && typeof f === "object" && typeof f.ts === "number" && typeof f.text === "string")
+      .slice(-MAX_FEEDBACK);
+  }
+
   if (parsed.activity && typeof parsed.activity === "object") {
     for (const [floorId, items] of Object.entries(parsed.activity)) {
       if (!Array.isArray(items)) continue;
@@ -465,6 +475,7 @@ function saveNow() {
       [...stands].map(([floorId, byOwner]) => [floorId, Object.fromEntries(byOwner)]),
     ),
     reports,
+    feedback,
     social: Object.fromEntries(social),
     dms: Object.fromEntries(dms),
     accounts: Object.fromEntries(accounts),
@@ -485,9 +496,41 @@ function saveNow() {
     } finally {
       closeSync(fd);
     }
+    rotateBackup();
     renameSync(tmp, DATA_FILE);
   } catch (err) {
     console.warn(`[data] persist failed: ${err.message}`);
+  }
+}
+
+/**
+ * Once per calendar day, keep a copy of the current data file before the
+ * first overwrite (floor-data.backup-N.json, newest first, keep 3). Cheap
+ * insurance: a bad deploy or bug can't silently eat everyone's stands,
+ * accounts, and chats — yesterday is always on disk.
+ */
+let lastBackupDay = "";
+function rotateBackup() {
+  const day = new Date().toISOString().slice(0, 10);
+  if (day === lastBackupDay) return;
+  try {
+    readFileSync(DATA_FILE);
+  } catch {
+    return; // no current file yet — try again on the next save, same day
+  }
+  try {
+    const bak = (n) => `${DATA_FILE.replace(/\.json$/, "")}.backup-${n}.json`;
+    for (let n = 2; n >= 1; n--) {
+      try {
+        renameSync(bak(n), bak(n + 1));
+      } catch {
+        // that slot didn't exist yet — fine
+      }
+    }
+    copyFileSync(DATA_FILE, bak(1));
+    lastBackupDay = day;
+  } catch (err) {
+    console.warn(`[data] backup rotation failed: ${err.message}`);
   }
 }
 
@@ -1141,6 +1184,40 @@ const server = createServer((req, res) => {
 
   if (req.method === "POST" && url.pathname.startsWith("/auth/")) {
     void handleAuthPost(req, res, url.pathname);
+    return;
+  }
+
+  // Uptime monitoring target: cheap, no auth, no data.
+  if (req.method === "GET" && url.pathname === "/health") {
+    let online = 0;
+    for (const room of rooms.values()) online += room.size;
+    sendJson(res, { ok: true, online, uptimeSec: Math.floor(process.uptime()) });
+    return;
+  }
+
+  // Beta feedback: free-text notes from anyone, stored for the operator.
+  if (req.method === "POST" && url.pathname === "/feedback") {
+    void (async () => {
+      if (authRateLimited(req)) {
+        sendJson(res, { error: "slow down — try again in a minute" });
+        return;
+      }
+      const body = await readJson(req);
+      const text = body ? sanitizeStr(body.text, 1000) : "";
+      if (!text) {
+        notFound(res);
+        return;
+      }
+      feedback.push({
+        ts: Date.now(),
+        from: sanitizeStr(body.from, MAX_NAME_LEN) || "anonymous",
+        page: sanitizeStr(body.page, 100),
+        text,
+      });
+      if (feedback.length > MAX_FEEDBACK) feedback = feedback.slice(-MAX_FEEDBACK);
+      scheduleSave();
+      sendJson(res, { ok: true });
+    })();
     return;
   }
 
