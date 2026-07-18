@@ -172,6 +172,12 @@ export function questForEmote(kind: EmoteKind): QuestDef | undefined {
 /** Titles this player has earned (for the Profile title picker). */
 export function earnedTitles(state: AppState): string[] {
   const titles: string[] = [];
+  // Membership titles: carried by the plan, shown wherever titles show
+  // (hover cards, calling cards) — visible status is part of what the
+  // subscription buys.
+  if (state.badges.includes("founding")) titles.push("Founding member");
+  if (state.sub === "founder") titles.push("Founder+ member");
+  else if (state.sub === "pro") titles.push("Pro member");
   for (const q of questStates(state)) {
     if (q.done && q.def.reward.title) titles.push(q.def.reward.title);
   }

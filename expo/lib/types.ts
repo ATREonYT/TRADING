@@ -118,6 +118,12 @@ export interface Startup {
   goalProgress: number; // 0..1 verified progress toward the goal
   verifiedRevenue: number; // monthly USD, drives rank; 0 = unverified
   seekingCofounder: boolean;
+  /**
+   * The owner's paid plan at save time — drives the visibility perks
+   * (directory/board priority, tags, Founder+ gold stand trim). Absent for
+   * free members and all seed startups.
+   */
+  tier?: "pro" | "founder";
   /** Absent for user-created startups — replyFor() falls back to generic replies. */
   dialogue?: DialogueScript;
   booth: BoothTheme;

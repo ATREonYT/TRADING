@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAppState } from "@/lib/store";
+import { STARTUPS, replyFor } from "@/lib/data/startups";
 import {
   getSeenMap,
   markThreadSeen,
@@ -22,6 +23,13 @@ import {
   useSocialPush,
 } from "@/lib/social";
 import MailToast, { type MailToastData } from "@/components/MailToast";
+
+/** A local message in a founder (NPC) thread — no server involved. */
+interface NpcMsg {
+  fromMe: boolean;
+  text: string;
+  ts: number;
+}
 
 /** 12x11 pixel speech bubble for the launcher button. */
 function PixelChat({ size = 20, color = "#F2EFE7" }: { size?: number; color?: string }) {
@@ -72,6 +80,13 @@ export default function Messenger() {
   const [draft, setDraft] = useState("");
   const [mail, setMail] = useState<MailToastData | null>(null);
   const [seenTick, setSeenTick] = useState(0);
+  /** Founder (NPC) conversations, keyed "npc:<startupId>" — session-local. */
+  const [npcThreads, setNpcThreads] = useState<Record<string, NpcMsg[]>>({});
+  const [npcTyping, setNpcTyping] = useState<string | null>(null);
+  const npcTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (npcTimer.current) clearTimeout(npcTimer.current);
+  }, []);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setMounted(true), []);
@@ -112,6 +127,18 @@ export default function Messenger() {
     (peerId: string) => {
       setOpen(true);
       setActiveThread(peerId);
+      if (peerId.startsWith("npc:")) {
+        // First open: the founder says hello, in their own voice.
+        const s = STARTUPS[peerId.slice(4)];
+        if (s) {
+          setNpcThreads((prev) =>
+            prev[peerId]?.length
+              ? prev
+              : { ...prev, [peerId]: [{ fromMe: false, text: replyFor(s, ""), ts: Date.now() }] },
+          );
+        }
+        return;
+      }
       const msgs = inboxRef.current.threads[peerId];
       const last = msgs?.length ? msgs[msgs.length - 1] : null;
       if (last) markThreadSeen(peerId, last.ts);
@@ -121,7 +148,8 @@ export default function Messenger() {
   );
 
   // Reading a thread marks it seen as messages land; keep it scrolled down.
-  const activeMsgs = activeThread ? inbox.threads[activeThread] ?? [] : [];
+  const activeMsgs =
+    activeThread && !activeThread.startsWith("npc:") ? inbox.threads[activeThread] ?? [] : [];
   useEffect(() => {
     if (!open || !activeThread || activeMsgs.length === 0) return;
     markThreadSeen(activeThread, activeMsgs[activeMsgs.length - 1].ts);
@@ -129,6 +157,13 @@ export default function Messenger() {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [open, activeThread, activeMsgs.length]);
+
+  // Founder threads scroll down as messages/typing land too.
+  const npcLen = activeThread ? npcThreads[activeThread]?.length ?? 0 : 0;
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [npcLen, npcTyping]);
 
   // Escape steps back: thread -> list -> closed.
   useEffect(() => {
@@ -155,8 +190,14 @@ export default function Messenger() {
   }).length;
   const badge = unreadThreads + inbox.requests.length;
 
+  const isNpc = activeThread?.startsWith("npc:") ?? false;
+  const activeNpcStartup = isNpc && activeThread ? STARTUPS[activeThread.slice(4)] : undefined;
   const activePeer = activeThread
-    ? inbox.connections.find((c) => c.peerId === activeThread)
+    ? isNpc
+      ? activeNpcStartup
+        ? { peerName: activeNpcStartup.founder, peerStartup: activeNpcStartup.name }
+        : null
+      : inbox.connections.find((c) => c.peerId === activeThread)
     : null;
 
   const send = (e: React.FormEvent): void => {
@@ -164,16 +205,46 @@ export default function Messenger() {
     const text = draft.trim();
     if (!text || !activeThread) return;
     setDraft("");
+    if (isNpc && activeNpcStartup) {
+      const key = activeThread;
+      setNpcThreads((prev) => ({
+        ...prev,
+        [key]: [...(prev[key] ?? []), { fromMe: true, text, ts: Date.now() }],
+      }));
+      setNpcTyping(key);
+      if (npcTimer.current) clearTimeout(npcTimer.current);
+      npcTimer.current = setTimeout(() => {
+        setNpcTyping((cur) => (cur === key ? null : cur));
+        setNpcThreads((prev) => ({
+          ...prev,
+          [key]: [
+            ...(prev[key] ?? []),
+            { fromMe: false, text: replyFor(activeNpcStartup, text), ts: Date.now() },
+          ],
+        }));
+      }, 900 + Math.random() * 900);
+      return;
+    }
     void sendSocialDm(me, state.profile.name || "founder", activeThread, text).then(() =>
       refresh(),
     );
   };
 
+  // Unified chat list: real people (server DMs) first by activity, then the
+  // founders you met at their booths (in-game conversations, local replies).
   const sorted = [...inbox.connections].sort((a, b) => {
     const lastA = inbox.threads[a.peerId]?.at(-1)?.ts ?? a.ts;
     const lastB = inbox.threads[b.peerId]?.at(-1)?.ts ?? b.ts;
     return lastB - lastA;
   });
+  const npcRows = state.connections
+    .filter((c) => c.startupId && !c.peerId && STARTUPS[c.startupId])
+    .map((c) => {
+      const s = STARTUPS[c.startupId as string];
+      const key = `npc:${c.startupId}`;
+      return { key, startup: s, lastTs: npcThreads[key]?.at(-1)?.ts ?? c.ts };
+    })
+    .sort((a, b) => b.lastTs - a.lastTs);
 
   return (
     <>
@@ -220,26 +291,49 @@ export default function Messenger() {
           {activeThread ? (
             <>
               <div ref={scrollRef} className="min-h-[160px] flex-1 overflow-y-auto p-2">
-                {activeMsgs.length === 0 && (
-                  <p className="px-2 py-3 text-sm text-muted">
-                    No messages yet. You did the hard part already.
-                  </p>
+                {isNpc ? (
+                  <>
+                    {(npcThreads[activeThread ?? ""] ?? []).map((m, i) => (
+                      <div
+                        key={`${m.ts}-${i}`}
+                        className={`rounded-sm px-2 py-1 text-sm ${m.fromMe ? "bg-accent-soft/50" : ""}`}
+                      >
+                        <span className={`micro mr-2 ${m.fromMe ? "text-accent" : "text-muted"}`}>
+                          {m.fromMe ? "you" : activePeer?.peerName ?? "them"}
+                        </span>
+                        {m.text}
+                      </div>
+                    ))}
+                    {npcTyping === activeThread && (
+                      <p className="micro px-2 py-1 text-muted">
+                        {activePeer?.peerName ?? "They"} is typing…
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {activeMsgs.length === 0 && (
+                      <p className="px-2 py-3 text-sm text-muted">
+                        No messages yet. You did the hard part already.
+                      </p>
+                    )}
+                    {activeMsgs.map((m, i) => (
+                      <div
+                        key={`${m.ts}-${i}`}
+                        className={`rounded-sm px-2 py-1 text-sm ${
+                          m.fromId === me ? "bg-accent-soft/50" : ""
+                        }`}
+                      >
+                        <span
+                          className={`micro mr-2 ${m.fromId === me ? "text-accent" : "text-muted"}`}
+                        >
+                          {m.fromId === me ? "you" : activePeer?.peerName ?? "them"}
+                        </span>
+                        {m.text}
+                      </div>
+                    ))}
+                  </>
                 )}
-                {activeMsgs.map((m, i) => (
-                  <div
-                    key={`${m.ts}-${i}`}
-                    className={`rounded-sm px-2 py-1 text-sm ${
-                      m.fromId === me ? "bg-accent-soft/50" : ""
-                    }`}
-                  >
-                    <span
-                      className={`micro mr-2 ${m.fromId === me ? "text-accent" : "text-muted"}`}
-                    >
-                      {m.fromId === me ? "you" : activePeer?.peerName ?? "them"}
-                    </span>
-                    {m.text}
-                  </div>
-                ))}
               </div>
               <form onSubmit={send} className="flex gap-2 border-t border-line p-2">
                 <label htmlFor="messenger-draft" className="sr-only">
@@ -275,10 +369,10 @@ export default function Messenger() {
                   {inbox.requests.length === 1 ? "" : "s"} waiting →
                 </Link>
               )}
-              {sorted.length === 0 ? (
+              {sorted.length === 0 && npcRows.length === 0 ? (
                 <p className="px-2 py-4 text-sm text-muted">
-                  No chats yet. Walk a floor, meet someone real, connect —
-                  conversations land here.
+                  No chats yet. Walk a floor and talk to any founder — every
+                  conversation lands here.
                 </p>
               ) : (
                 <ul className="flex flex-col gap-1">
@@ -313,6 +407,35 @@ export default function Messenger() {
                               className="h-2 w-2 shrink-0 rounded-full bg-accent"
                             />
                           )}
+                        </button>
+                      </li>
+                    );
+                  })}
+                  {npcRows.length > 0 && (
+                    <li className="micro mt-1 px-1 pt-1 text-muted" aria-hidden="true">
+                      Founders you met
+                    </li>
+                  )}
+                  {npcRows.map((r) => {
+                    const last = npcThreads[r.key]?.at(-1) ?? null;
+                    return (
+                      <li key={r.key}>
+                        <button
+                          type="button"
+                          onClick={() => openThread(r.key)}
+                          className="btn-press flex w-full items-center gap-2 rounded-md border border-line px-3 py-2 text-left hover:border-muted"
+                        >
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm text-ink">
+                              {r.startup.founder}
+                              <span className="text-muted"> · {r.startup.name}</span>
+                            </span>
+                            <span className="block truncate text-xs text-muted">
+                              {last
+                                ? `${last.fromMe ? "you: " : ""}${last.text}`
+                                : "met at their booth — say hi"}
+                            </span>
+                          </span>
                         </button>
                       </li>
                     );

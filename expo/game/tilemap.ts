@@ -472,6 +472,14 @@ function bannerDrawable(b: BoothInstance & { startup: Startup }): Drawable {
         ctx.fillStyle = GOLD;
         ctx.fillRect(bx + 3, by + T - 7, 4 * T - 6, 3);
       }
+      // Founder+ membership perk: a gold edge along the banner top — reads
+      // from across the hall without shouting
+      if (b.startup.tier === "founder") {
+        ctx.fillStyle = GOLD;
+        ctx.fillRect(bx + 3, by - 8, 4 * T - 6, 2);
+        ctx.fillRect(bx + 3, by - 8, 2, 8);
+        ctx.fillRect(bx + 4 * T - 5, by - 8, 2, 8);
+      }
       // player-owned stands wear a presence lamp: green = owner on the floor,
       // gray = stand is up but the owner is away
       if (b.ownerId) {

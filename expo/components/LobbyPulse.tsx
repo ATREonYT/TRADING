@@ -16,7 +16,7 @@ import { httpBase } from "@/lib/net";
 import { useInbox } from "@/lib/social";
 import { TIER_ORDER, type FloorDef, type SubTier } from "@/lib/types";
 import { useCommunityStartups } from "@/components/useCommunityStartups";
-import { TIER_LABEL } from "@/components/TierTag";
+import TierTag, { TIER_LABEL } from "@/components/TierTag";
 
 const FLOOR_OF: Record<string, FloorDef> = (() => {
   const out: Record<string, FloorDef> = {};
@@ -35,6 +35,12 @@ interface SeekingRow {
   href: string;
   online: boolean;
   community: boolean;
+  tier?: "pro" | "founder";
+}
+
+/** Membership visibility boost: Founder+ over Pro over free. */
+function tierWeight(tier: "pro" | "founder" | undefined): number {
+  return tier === "founder" ? 2 : tier === "pro" ? 1 : 0;
 }
 
 export default function LobbyPulse({
@@ -110,6 +116,7 @@ export default function LobbyPulse({
         href: floor ? `/floor/${floor.id}?spot=${c.spotIndex}` : "/directory?seeking=1",
         online: c.online,
         community: true,
+        tier: c.startup.tier,
       });
     }
     for (const s of Object.values(STARTUPS)) {
@@ -126,10 +133,13 @@ export default function LobbyPulse({
         community: false,
       });
     }
-    // live founders first, then fresh community stands, then the regulars
+    // live founders first, then paid members (a membership perk), then
+    // fresh community stands, then the regulars
     rows.sort(
       (a, b) =>
-        Number(b.online) - Number(a.online) || Number(b.community) - Number(a.community),
+        Number(b.online) - Number(a.online) ||
+        tierWeight(b.tier) - tierWeight(a.tier) ||
+        Number(b.community) - Number(a.community),
     );
     return rows.slice(0, 5);
   }, [community, me]);
@@ -214,6 +224,11 @@ export default function LobbyPulse({
                       {r.online && (
                         <span className="micro ml-2 rounded-sm border border-verify/40 px-1 py-px text-verify">
                           founder here now
+                        </span>
+                      )}
+                      {r.tier && (
+                        <span className="ml-2 inline-block align-middle">
+                          <TierTag tier={r.tier} />
                         </span>
                       )}
                     </p>

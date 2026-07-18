@@ -49,6 +49,11 @@ interface DirRow {
   online: boolean;
 }
 
+/** Membership visibility boost: Founder+ over Pro over free. */
+function tierWeight(tier: "pro" | "founder" | undefined): number {
+  return tier === "founder" ? 2 : tier === "pro" ? 1 : 0;
+}
+
 function chipClass(active: boolean): string {
   return `min-h-[40px] rounded-md border px-3 py-2 text-xs ${
     active
@@ -134,8 +139,10 @@ export default function DirectoryPage() {
       })
       .sort(
         (a, b) =>
-          // live community stands float up, then by revenue, then name
+          // live community stands float up, then paid members (a membership
+          // perk: Founder+ above Pro above free), then revenue, then name
           Number(b.online) - Number(a.online) ||
+          tierWeight(b.startup.tier) - tierWeight(a.startup.tier) ||
           b.startup.verifiedRevenue - a.startup.verifiedRevenue ||
           a.startup.name.localeCompare(b.startup.name),
       );
@@ -244,6 +251,7 @@ export default function DirectoryPage() {
                         {r.online ? "Here now" : r.floor ? "New booth" : "New"}
                       </span>
                     )}
+                    {s.tier && <TierTag tier={s.tier} />}
                     {s.seekingCofounder && (
                       <span className="micro rounded-sm border border-verify/40 px-1.5 py-0.5 text-verify">
                         Seeking co-founder

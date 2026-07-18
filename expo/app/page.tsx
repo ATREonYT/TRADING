@@ -3,7 +3,7 @@ import { FLOORS } from "@/lib/data/floors";
 import { RANKS } from "@/lib/ranks";
 import { TIER_ORDER, type GlyphId, type SubTier } from "@/lib/types";
 import TierTag, { TIER_LABEL, TIER_PRICE, TIER_PRICE_ANNUAL } from "@/components/TierTag";
-import { FOUNDING_OFFER, annualFreeMonths } from "@/lib/pricing";
+import { FOUNDING_OFFER, TIER_PERKS, annualFreeMonths } from "@/lib/pricing";
 import PixelGlyph from "@/components/PixelGlyph";
 import HeroScene from "@/components/HeroScene";
 import Reveal from "@/components/Reveal";
@@ -384,6 +384,17 @@ export default function LandingPage() {
                       <li key={f.id} className="flex items-center gap-2 text-sm">
                         <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 bg-verify" />
                         {f.name}
+                      </li>
+                    ))}
+                    {TIER_PERKS[tier].map((perk) => (
+                      <li key={perk} className="flex items-center gap-2 text-sm text-muted">
+                        <span
+                          aria-hidden="true"
+                          className={`h-1.5 w-1.5 shrink-0 ${
+                            tier === "founder" ? "bg-gold" : "bg-accent/60"
+                          }`}
+                        />
+                        {perk}
                       </li>
                     ))}
                   </ul>

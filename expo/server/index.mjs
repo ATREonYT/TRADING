@@ -586,6 +586,7 @@ function sanitizeStartup(s) {
       goalProgress: Number.isFinite(goalProgress) ? Math.min(1, Math.max(0, goalProgress)) : 0,
       verifiedRevenue: Number.isFinite(verifiedRevenue) ? Math.max(0, verifiedRevenue) : 0,
       seekingCofounder: s.seekingCofounder === true,
+      tier: s.tier === "pro" || s.tier === "founder" ? s.tier : undefined,
       booth: {
         carpet: HEX_COLOR.test(booth.carpet) ? booth.carpet : "#C2B8A3",
         banner: HEX_COLOR.test(booth.banner) ? booth.banner : "#5C5548",

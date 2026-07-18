@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { NetClient, Startup } from "@/lib/types";
 import RankBadge from "@/components/RankBadge";
+import TierTag from "@/components/TierTag";
 import PixelGlyph from "@/components/PixelGlyph";
 import Guestbook from "@/components/Guestbook";
 import { luma } from "@/game/sprites";
@@ -91,6 +92,7 @@ export default function BoothCard({
           <span className="micro rounded-sm border border-line px-1.5 py-0.5 text-muted">
             {s.category}
           </span>
+          {s.tier && <TierTag tier={s.tier} />}
           {s.seekingCofounder && (
             <span className="micro rounded-sm border border-verify/40 px-1.5 py-0.5 text-verify">
               Seeking co-founder

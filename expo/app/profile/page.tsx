@@ -21,6 +21,7 @@ import PixelGlyph, { GLYPH_IDS } from "@/components/PixelGlyph";
 import { TIER_LABEL, TIER_PRICE, TIER_PRICE_ANNUAL } from "@/components/TierTag";
 import {
   FOUNDING_OFFER,
+  TIER_PERKS,
   TIER_PRICING,
   annualFreeMonths,
   billingLive,
@@ -274,6 +275,9 @@ export default function ProfilePage() {
       goalProgress: state.myStartup?.goalProgress ?? 0,
       verifiedRevenue: state.myStartup?.verifiedRevenue ?? 0,
       seekingCofounder: form.seekingCofounder,
+      // membership perk: your plan travels with the booth (priority listing,
+      // tags, Founder+ gold trim) — free members simply carry none
+      tier: state.sub === "free" ? undefined : state.sub,
       booth: {
         carpet: form.carpet,
         banner: form.banner,
@@ -964,6 +968,14 @@ export default function ProfilePage() {
                         ·
                       </span>
                       {f.name}
+                    </li>
+                  ))}
+                  {TIER_PERKS[tier].map((perk) => (
+                    <li key={perk} className="flex items-baseline gap-1.5 text-xs text-muted">
+                      <span aria-hidden="true" className={tier === "founder" ? "text-gold-deep" : "text-accent"}>
+                        ·
+                      </span>
+                      {perk}
                     </li>
                   ))}
                 </ul>

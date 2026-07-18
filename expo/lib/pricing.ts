@@ -31,6 +31,27 @@ export function annualFreeMonths(tier: Exclude<SubTier, "free">): number {
 }
 
 /**
+ * What each plan actually buys, beyond floor access. Every line here is
+ * implemented — priority sorting in the directory and lobby co-founder
+ * board, tier tags on stands/cards/listings, the Founder+ gold stand trim,
+ * and membership titles. Perks carry with the plan: they follow your booth
+ * everywhere it appears.
+ */
+export const TIER_PERKS: Record<SubTier, string[]> = {
+  free: ["Every social feature: chat, connect, quests, reactions"],
+  pro: [
+    "Priority listing in the directory and co-founder board",
+    "PRO tag on your stand, card, and listings",
+    "“Pro member” title on your hover card",
+  ],
+  founder: [
+    "Top placement everywhere — above Pro and free",
+    "Gold-trimmed stand on the floor",
+    "FOUNDER+ tag and “Founder+ member” title",
+  ],
+};
+
+/**
  * Beta launch offer: one year of Founder+, the price locked for life, a
  * permanent founding badge, numbered. Capped — scarcity is the point.
  */
